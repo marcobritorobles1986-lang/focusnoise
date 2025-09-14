@@ -384,6 +384,22 @@ class _MixerPageState extends State<MixerPage> {
 
   // ======= Helpers reproducción =======
 
+  // MINI FADE para acciones puntuales (encender/apagar pista)
+  Future<void> _fade({
+    required AudioPlayer p,
+    required double from,
+    required double to,
+    int ms = 300,
+    int steps = 18,
+  }) async {
+    final dt = Duration(milliseconds: (ms / steps).round());
+    for (var i = 0; i <= steps; i++) {
+      final v = (from + (to - from) * (i / steps)).clamp(0.0, 1.0);
+      await p.setVolume(v);
+      await Future.delayed(dt);
+    }
+  }
+
   // Genera bytes si aún no existen
   Future<Uint8List> _ensureBytes(String id) async {
     switch (id) {
@@ -412,26 +428,33 @@ class _MixerPageState extends State<MixerPage> {
     }
   }
 
-  // Reproducir/parar con generación on-demand
+  // Reproducir/parar con generación on-demand (con fade)
   Future<void> _toggleBytes(AudioPlayer p, String id, Uint8List? src, bool on, double vol) async {
     if (on) {
-      await p.setVolume(vol);
       final bytes = src ?? await _ensureBytes(id);
+      await p.setVolume(0.0);
       await p.play(BytesSource(bytes));
+      await _fade(p: p, from: 0.0, to: vol, ms: 280);
       if (_pausedAll) _pausedAll = false;
     } else {
+      await _fade(p: p, from: vol, to: 0.0, ms: 240);
       await p.stop();
+      // Restituye el volumen lógico de la pista (estado) para el siguiente arranque
+      await p.setVolume(vol);
     }
     if (mounted) setState(() {});
   }
 
   Future<void> _toggleAsset(AudioPlayer p, String assetPath, bool on, double vol) async {
     if (on) {
-      await p.setVolume(vol);
+      await p.setVolume(0.0);
       await p.play(AssetSource(assetPath));
+      await _fade(p: p, from: 0.0, to: vol, ms: 280);
       if (_pausedAll) _pausedAll = false;
     } else {
+      await _fade(p: p, from: vol, to: 0.0, ms: 240);
       await p.stop();
+      await p.setVolume(vol);
     }
     if (mounted) setState(() {});
   }
@@ -1109,7 +1132,7 @@ class _MixerPageState extends State<MixerPage> {
                       leading: const Icon(Icons.music_note),
                       title: Text(_assetDefs[i].title),
                       subtitle: c == null
-                          ? const Text('CC0 / Sin atribución')
+                          ? const Text('CC0 (sin atribución)')
                           : Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
