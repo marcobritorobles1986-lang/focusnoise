@@ -276,12 +276,16 @@ class _MixerPageState extends State<MixerPage> {
   // ======= Timer de sueño =======
   Timer? _sleepTimer;
   Timer? _uiTicker;
+  Timer? _sleepPrefadeTimer; // pre-fade 5s antes de terminar
   DateTime? _sleepAt; // mostrar cuenta atrás
 
   // ======= Control global (reproductor) =======
   bool _pausedAll = false;
 
   bool _ready = false;
+
+  // ======= Master gain =======
+  double _masterGain = 0.85; // volumen maestro 0..1
 
   String _presetKey(String name) => 'preset:$name';
 
@@ -376,13 +380,39 @@ class _MixerPageState extends State<MixerPage> {
     fireSynthPlayer.dispose();
 
     _sleepTimer?.cancel();
+    _sleepPrefadeTimer?.cancel();
     _uiTicker?.cancel();
 
     _presetNameCtrl.dispose();
     super.dispose();
   }
 
-  // ======= Helpers reproducción =======
+  // ======= Helpers de volumen/mezcla =======
+
+  // Aplica volumen real = volumen de pista * master
+  Future<void> _applyVolume(AudioPlayer p, double vol) async {
+    final v = (vol * _masterGain).clamp(0.0, 1.0);
+    await p.setVolume(v);
+  }
+
+  // Reaplica volúmenes actuales a TODO lo activo (tras cambiar master o cancelar timer)
+  Future<void> _applyAllCurrentVolumes() async {
+    if (whiteOn) await _applyVolume(whitePlayer, whiteVol);
+    if (pinkOn) await _applyVolume(pinkPlayer, pinkVol);
+    if (brownOn) await _applyVolume(brownPlayer, brownVol);
+    if (binauralOn) await _applyVolume(binauralPlayer, binauralVol);
+
+    if (blueOn) await _applyVolume(bluePlayer, blueVol);
+    if (violetOn) await _applyVolume(violetPlayer, violetVol);
+    if (windOn) await _applyVolume(windPlayer, windVol);
+    if (rainOn) await _applyVolume(rainPlayer, rainVol);
+    if (wavesOn) await _applyVolume(wavesPlayer, wavesVol);
+    if (fireOn) await _applyVolume(fireSynthPlayer, fireVol);
+
+    for (int a = 0; a < _assetPlayers.length; a++) {
+      if (_assetOn[a]) await _applyVolume(_assetPlayers[a], _assetVol[a]);
+    }
+  }
 
   // MINI FADE para acciones puntuales (encender/apagar pista)
   Future<void> _fade({
@@ -428,45 +458,68 @@ class _MixerPageState extends State<MixerPage> {
     }
   }
 
-  // Reproducir/parar con generación on-demand (con fade)
+  // Reproducir/parar con generación on-demand (con fade y manejo de errores)
   Future<void> _toggleBytes(AudioPlayer p, String id, Uint8List? src, bool on, double vol) async {
     if (on) {
-      final bytes = src ?? await _ensureBytes(id);
-      await p.setVolume(0.0);
-      await p.play(BytesSource(bytes));
-      await _fade(p: p, from: 0.0, to: vol, ms: 280);
-      if (_pausedAll) _pausedAll = false;
+      try {
+        await p.setVolume(0.0);
+        final bytes = src ?? await _ensureBytes(id);
+        await p.play(BytesSource(bytes));
+        await _fade(p: p, from: 0.0, to: (vol * _masterGain).clamp(0.0, 1.0), ms: 280);
+        if (_pausedAll) _pausedAll = false;
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No se pudo reproducir $id')),
+          );
+        }
+      }
     } else {
-      await _fade(p: p, from: vol, to: 0.0, ms: 240);
+      await _fade(p: p, from: (vol * _masterGain).clamp(0.0, 1.0), to: 0.0, ms: 220);
       await p.stop();
-      // Restituye el volumen lógico de la pista (estado) para el siguiente arranque
-      await p.setVolume(vol);
+      await p.setVolume(vol); // valor lógico base
     }
     if (mounted) setState(() {});
   }
 
   Future<void> _toggleAsset(AudioPlayer p, String assetPath, bool on, double vol) async {
     if (on) {
-      await p.setVolume(0.0);
-      await p.play(AssetSource(assetPath));
-      await _fade(p: p, from: 0.0, to: vol, ms: 280);
-      if (_pausedAll) _pausedAll = false;
+      try {
+        await p.setVolume(0.0);
+        await p.play(AssetSource(assetPath));
+        await _fade(p: p, from: 0.0, to: (vol * _masterGain).clamp(0.0, 1.0), ms: 280);
+        if (_pausedAll) _pausedAll = false;
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudo reproducir el asset')),
+          );
+        }
+      }
     } else {
-      await _fade(p: p, from: vol, to: 0.0, ms: 240);
+      await _fade(p: p, from: (vol * _masterGain).clamp(0.0, 1.0), to: 0.0, ms: 220);
       await p.stop();
       await p.setVolume(vol);
     }
     if (mounted) setState(() {});
   }
 
-  // Fade-out global sin getVolume (compat audioplayers 6.x)
+  // Fade-out global (considera master)
   Future<void> _fadeAllOut({int ms = 800}) async {
     final steps = 16;
     final delay = Duration(milliseconds: (ms / steps).round());
 
-    final w = whiteVol, p = pinkVol, b = brownVol, bb = binauralVol;
-    final bl = blueVol, vi = violetVol, wi = windVol, ra = rainVol, wa = wavesVol, fi = fireVol;
-    final assetsVolCopy = List<double>.from(_assetVol);
+    final w = whiteVol * _masterGain,
+        p = pinkVol * _masterGain,
+        b = brownVol * _masterGain,
+        bb = binauralVol * _masterGain;
+    final bl = blueVol * _masterGain,
+        vi = violetVol * _masterGain,
+        wi = windVol * _masterGain,
+        ra = rainVol * _masterGain,
+        wa = wavesVol * _masterGain,
+        fi = fireVol * _masterGain;
+    final assetsVolCopy = _assetVol.map((v) => v * _masterGain).toList(growable: false);
 
     for (int i = 0; i < steps; i++) {
       final k = 1 - (i + 1) / steps;
@@ -512,6 +565,50 @@ class _MixerPageState extends State<MixerPage> {
       }
       _pausedAll = false;
     });
+  }
+
+  // Pre-fade global (baja volumen, no detiene)
+  Future<void> _fadeDownOnly({int ms = 5000}) async {
+    final steps = 24;
+    final delay = Duration(milliseconds: (ms / steps).round());
+
+    final w = whiteVol * _masterGain,
+        p = pinkVol * _masterGain,
+        b = brownVol * _masterGain,
+        bb = binauralVol * _masterGain;
+    final bl = blueVol * _masterGain,
+        vi = violetVol * _masterGain,
+        wi = windVol * _masterGain,
+        ra = rainVol * _masterGain,
+        wa = wavesVol * _masterGain,
+        fi = fireVol * _masterGain;
+    final assetsVolCopy = _assetVol.map((v) => v * _masterGain).toList(growable: false);
+
+    for (int i = 0; i < steps; i++) {
+      final k = 1 - (i + 1) / steps;
+      if (whiteOn) await whitePlayer.setVolume(w * k);
+      if (pinkOn) await pinkPlayer.setVolume(p * k);
+      if (brownOn) await brownPlayer.setVolume(b * k);
+      if (binauralOn) await binauralPlayer.setVolume(bb * k);
+
+      if (blueOn) await bluePlayer.setVolume(bl * k);
+      if (violetOn) await violetPlayer.setVolume(vi * k);
+      if (windOn) await windPlayer.setVolume(wi * k);
+      if (rainOn) await rainPlayer.setVolume(ra * k);
+      if (wavesOn) await wavesPlayer.setVolume(wa * k);
+      if (fireOn) await fireSynthPlayer.setVolume(fi * k);
+
+      for (int a = 0; a < _assetPlayers.length; a++) {
+        if (_assetOn[a]) await _assetPlayers[a].setVolume(assetsVolCopy[a] * k);
+      }
+      await Future.delayed(delay);
+    }
+  }
+
+  // Master gain setter
+  Future<void> _setMasterGain(double g) async {
+    setState(() => _masterGain = g.clamp(0.0, 1.0));
+    await _applyAllCurrentVolumes();
   }
 
   // Pausar/Reanudar TODO lo encendido
@@ -581,7 +678,7 @@ class _MixerPageState extends State<MixerPage> {
     for (int i = 0; i < _assetVol.length; i++) {
       if (_assetOn[i]) sum += _assetVol[i];
     }
-    return sum.clamp(0.0, 4.0) / 4.0;
+    return (sum * _masterGain).clamp(0.0, 4.0) / 4.0;
   }
 
   // ======= Presets "rápidos" (compat) =======
@@ -953,6 +1050,7 @@ class _MixerPageState extends State<MixerPage> {
 
     _sleepTimer?.cancel();
     _uiTicker?.cancel();
+    _sleepPrefadeTimer?.cancel();
     _sleepAt = null;
 
     if (minutes > 0) {
@@ -961,11 +1059,20 @@ class _MixerPageState extends State<MixerPage> {
         await _fadeAllOut();
         if (mounted) setState(() => _sleepAt = null);
       });
+      // Pre-fade 5s antes de terminar
+      final until = _sleepAt!.difference(DateTime.now()) - const Duration(seconds: 5);
+      if (!until.isNegative) {
+        _sleepPrefadeTimer = Timer(until, () async {
+          await _fadeDownOnly(ms: 4800);
+        });
+      }
       _uiTicker = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() {});
       });
     } else {
-      setState(() {}); // quitó timer
+      // Cancelado: restaura volúmenes actuales por si estaba en pre-fade
+      await _applyAllCurrentVolumes();
+      setState(() {});
     }
   }
 
@@ -1208,6 +1315,35 @@ class _MixerPageState extends State<MixerPage> {
           _visualHeader(),
           const SizedBox(height: 12),
 
+          // Volumen Maestro
+          Card(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Volumen maestro', style: TextStyle(fontWeight: FontWeight.w700)),
+                  Row(
+                    children: [
+                      const Icon(Icons.volume_mute_outlined),
+                      Expanded(
+                        child: Slider(
+                          value: _masterGain,
+                          min: 0,
+                          max: 1,
+                          onChanged: (v) => _setMasterGain(v),
+                        ),
+                      ),
+                      const Icon(Icons.volume_up_outlined),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
           // Selector de categorías (chips)
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -1244,7 +1380,7 @@ class _MixerPageState extends State<MixerPage> {
               volume: whiteVol,
               onVolume: (v) async {
                 setState(() => whiteVol = v);
-                await whitePlayer.setVolume(v);
+                await _applyVolume(whitePlayer, v);
               },
             ),
             _track(
@@ -1258,7 +1394,7 @@ class _MixerPageState extends State<MixerPage> {
               volume: pinkVol,
               onVolume: (v) async {
                 setState(() => pinkVol = v);
-                await pinkPlayer.setVolume(v);
+                await _applyVolume(pinkPlayer, v);
               },
             ),
             _track(
@@ -1272,7 +1408,7 @@ class _MixerPageState extends State<MixerPage> {
               volume: brownVol,
               onVolume: (v) async {
                 setState(() => brownVol = v);
-                await brownPlayer.setVolume(v);
+                await _applyVolume(brownPlayer, v);
               },
             ),
             _track(
@@ -1286,7 +1422,7 @@ class _MixerPageState extends State<MixerPage> {
               volume: binauralVol,
               onVolume: (v) async {
                 setState(() => binauralVol = v);
-                await binauralPlayer.setVolume(v);
+                await _applyVolume(binauralPlayer, v);
               },
             ),
             _track(
@@ -1300,7 +1436,7 @@ class _MixerPageState extends State<MixerPage> {
               volume: blueVol,
               onVolume: (v) async {
                 setState(() => blueVol = v);
-                await bluePlayer.setVolume(v);
+                await _applyVolume(bluePlayer, v);
               },
             ),
             _track(
@@ -1314,7 +1450,7 @@ class _MixerPageState extends State<MixerPage> {
               volume: violetVol,
               onVolume: (v) async {
                 setState(() => violetVol = v);
-                await violetPlayer.setVolume(v);
+                await _applyVolume(violetPlayer, v);
               },
             ),
             _track(
@@ -1328,7 +1464,7 @@ class _MixerPageState extends State<MixerPage> {
               volume: windVol,
               onVolume: (v) async {
                 setState(() => windVol = v);
-                await windPlayer.setVolume(v);
+                await _applyVolume(windPlayer, v);
               },
             ),
             _track(
@@ -1342,7 +1478,7 @@ class _MixerPageState extends State<MixerPage> {
               volume: rainVol,
               onVolume: (v) async {
                 setState(() => rainVol = v);
-                await rainPlayer.setVolume(v);
+                await _applyVolume(rainPlayer, v);
               },
             ),
             _track(
@@ -1356,7 +1492,7 @@ class _MixerPageState extends State<MixerPage> {
               volume: wavesVol,
               onVolume: (v) async {
                 setState(() => wavesVol = v);
-                await wavesPlayer.setVolume(v);
+                await _applyVolume(wavesPlayer, v);
               },
             ),
             _track(
@@ -1370,7 +1506,7 @@ class _MixerPageState extends State<MixerPage> {
               volume: fireVol,
               onVolume: (v) async {
                 setState(() => fireVol = v);
-                await fireSynthPlayer.setVolume(v);
+                await _applyVolume(fireSynthPlayer, v);
               },
             ),
           ],
@@ -1396,7 +1532,7 @@ class _MixerPageState extends State<MixerPage> {
                     volume: _assetVol[realIndex],
                     onVolume: (v) async {
                       setState(() => _assetVol[realIndex] = v);
-                      await _assetPlayers[realIndex].setVolume(v);
+                      await _applyVolume(_assetPlayers[realIndex], v);
                     },
                   );
                 },
