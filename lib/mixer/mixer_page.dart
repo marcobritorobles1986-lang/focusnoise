@@ -154,61 +154,6 @@ class _MixerPageState extends State<MixerPage> {
       ),
     ),
     _AssetTrack(
-      'Epic- 3',
-      'audio/ogg/epic-3-226201.ogg',
-      'Musica Relajante',
-      credit: Credit(
-        'Epic- 3',
-        'Autor: SenorMusica81',
-        'Pixabay License',
-        'https://pixabay.com/es/users/senormusica81-44746308',
-      ),
-    ),
-    _AssetTrack(
-      'Epic Emoctional_Long',
-      'audio/ogg/epic-relaxing-flute-music-144009.ogg',
-      'Musica Epica',
-      credit: Credit(
-        'Epic Emoctional_Long',
-        'Autor: Grand_Project',
-        'Pixabay License',
-        'https://pixabay.com/es/users/grand_project-19033897',
-      ),
-    ),
-    _AssetTrack(
-      'Flute Meditation Music 5',
-      'audio/ogg/flute-meditation-music-5-229769.ogg',
-      'Musica Espiritual',
-      credit: Credit(
-        'Epic Emoctional_Long',
-        'Autor: Ønetent',
-        'Pixabay License',
-        'https://pixabay.com/es/users/ønetent-38250704',
-      ),
-    ),
-    _AssetTrack(
-      'Epic Relaxing Flute Music',
-      'audio/ogg/epic-relaxing-flute-music-144009.ogg',
-      'Flauta Relajante',
-      credit: Credit(
-        'Epic Relaxing Flute Music',
-        'Autor: Onetent',
-        'Pixabay License',
-        'https://pixabay.com/es/users/onetent-15616180',
-      ),
-    ),
-    _AssetTrack(
-      'Relaxing Music',
-      'audio/ogg/epic-relaxing-flute-music-144009.ogg',
-      'Meditación',
-      credit: Credit(
-        'Relaxing Music',
-        'Autor: RelaxingTime',
-        'Pixabay License',
-        'https://pixabay.com/es/users/relaxingtime-17430502',
-      ),
-    ),
-    _AssetTrack(
       'Sedative',
       'audio/ogg/sedative-110241.ogg',
       'Sedante',
@@ -261,6 +206,50 @@ class _MixerPageState extends State<MixerPage> {
         'Autor: uchihadace1st',
         'Pixabay License',
         'https://pixabay.com/es/users/uchihadace1st-52017283',
+      ),
+    ),
+    _AssetTrack(
+      'YouTube folk music - River Knows My Name',
+      'audio/ogg/youtube-folk-music-river-knows-my-name-366869.ogg',
+      'Pop FolkFolk Indie',
+      credit: Credit(
+        'YouTube folk music - River Knows My Name',
+        'Autor: Diana_Production_Music',
+        'Pixabay License',
+        'https://pixabay.com/es/users/diana_production_music-46737158',
+      ),
+    ),
+    _AssetTrack(
+      'Morning Mist',
+      'audio/ogg/morning-mist-180089.ogg',
+      'Espiritual,Meditación',
+      credit: Credit(
+        'Morning Mist',
+        'Autor: The4Elements',
+        'Pixabay License',
+        'https://pixabay.com/es/users/the4elements-38522577',
+      ),
+    ),
+    _AssetTrack(
+      'Epic Relaxing Flute Music',
+      'audio/ogg/epic-relaxing-flute-music-144009.ogg',
+      'Musica Relajante',
+      credit: Credit(
+        'Epic Relaxing Flute Music',
+        'Autor: Onetent',
+        'Pixabay License',
+        'https://pixabay.com/es/users/onetent-15616180',
+      ),
+    ),
+    _AssetTrack(
+      'Fantasy Music Lumina',
+      'audio/ogg/fantasy-music-lumina-143991.ogg',
+      'Musica Relajante',
+      credit: Credit(
+        'Fantasy Music Lumina',
+        'Autor: Onetent',
+        'Pixabay License',
+        'https://pixabay.com/es/users/onetent-15616180',
       ),
     ),
   ];
