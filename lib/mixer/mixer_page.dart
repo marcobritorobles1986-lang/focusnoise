@@ -6,7 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-
+import 'package:flutter/services.dart' show rootBundle; // verificación de assets
+import 'dart:io' show Platform;                         // aviso iOS
 import '../audio/noise_audio.dart';
 
 class MixerPage extends StatefulWidget {
@@ -483,26 +484,63 @@ class _MixerPageState extends State<MixerPage> {
   }
 
   Future<void> _toggleAsset(AudioPlayer p, String assetPath, bool on, double vol) async {
+    // En pubspec declaraste: assets/audio/ogg/
+    // audioplayers v6 suele esperar el path SIN 'assets/' → 'audio/ogg/...'
+    final String relPath = assetPath.startsWith('assets/')
+        ? assetPath.substring('assets/'.length)
+        : assetPath;
+    final String bundlePath = assetPath.startsWith('assets/')
+        ? assetPath
+        : 'assets/$assetPath';
+
     if (on) {
       try {
         await p.setVolume(0.0);
-        await p.play(AssetSource(assetPath));
-        await _fade(p: p, from: 0.0, to: (vol * _masterGain).clamp(0.0, 1.0), ms: 280);
-        if (_pausedAll) _pausedAll = false;
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No se pudo reproducir el asset')),
-          );
+
+        // 1) intento estándar (lo que te funcionaba antes)
+        await p.play(AssetSource(relPath));
+      } catch (e1, st1) {
+        // 2) plan B: algunos entornos esperan el prefijo (no debería, pero probamos)
+        try {
+          await p.play(AssetSource(bundlePath));
+        } catch (e2, st2) {
+          // Log útil para saber exactamente qué pasó
+          // ignore: avoid_print
+          print('[Mixer] Asset play failed\n'
+              ' - rel: $relPath  err: $e1\n$st1\n'
+              ' - bun: $bundlePath err: $e2\n$st2\n');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('No se pudo reproducir: $relPath')),
+            );
+            final idx = _assetDefs.indexWhere((t) => t.assetPath == assetPath);
+            if (idx >= 0) _assetOn[idx] = false;
+          }
+          setState(() {});
+          return; // aborta
         }
       }
+
+      await _fade(
+        p: p,
+        from: 0.0,
+        to: (vol * _masterGain).clamp(0.0, 1.0),
+        ms: 280,
+      );
+      if (_pausedAll) _pausedAll = false;
     } else {
-      await _fade(p: p, from: (vol * _masterGain).clamp(0.0, 1.0), to: 0.0, ms: 220);
+      await _fade(
+        p: p,
+        from: (vol * _masterGain).clamp(0.0, 1.0),
+        to: 0.0,
+        ms: 220,
+      );
       await p.stop();
       await p.setVolume(vol);
     }
     if (mounted) setState(() {});
   }
+
 
   // Fade-out global (considera master)
   Future<void> _fadeAllOut({int ms = 800}) async {
