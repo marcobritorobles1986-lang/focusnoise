@@ -9,6 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart' show rootBundle; // verificación de assets
 import 'dart:io' show Platform;                         // aviso iOS
 import '../audio/noise_audio.dart';
+import 'dart:isolate';
+
 
 class MixerPage extends StatefulWidget {
   const MixerPage({super.key});
@@ -302,6 +304,14 @@ class _MixerPageState extends State<MixerPage> {
   void initState() {
     super.initState();
     _initAudio();
+    @override
+    void initState() {
+      super.initState();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _initAudio(); // no esperes aquí
+      });
+    }
+
   }
 
   Future<void> _initAudio() async {
@@ -350,17 +360,18 @@ class _MixerPageState extends State<MixerPage> {
 
   // Genera todos los loops poco a poco para no congelar
   Future<void> _precomputeInBackground() async {
-    whiteBytes = gen.whiteNoiseWav(seconds: 15); await Future.delayed(const Duration(milliseconds: 1));
-    pinkBytes  = gen.pinkNoiseWav(seconds: 15);  await Future.delayed(const Duration(milliseconds: 1));
-    brownBytes = gen.brownNoiseWav(seconds: 15); await Future.delayed(const Duration(milliseconds: 1));
-    binauralBytes = gen.binauralBeatWav(seconds: 15, baseHz: 220, beatHz: 10); await Future.delayed(const Duration(milliseconds: 1));
+    // Cada task corre en otro isolate; la UI no se congela
+    whiteBytes   = await Isolate.run(() => NoiseAudio(sampleRate: 44100).whiteNoiseWav(seconds: 15));
+    pinkBytes    = await Isolate.run(() => NoiseAudio(sampleRate: 44100).pinkNoiseWav(seconds: 15));
+    brownBytes   = await Isolate.run(() => NoiseAudio(sampleRate: 44100).brownNoiseWav(seconds: 15));
+    binauralBytes= await Isolate.run(() => NoiseAudio(sampleRate: 44100).binauralBeatWav(seconds: 15, baseHz: 220, beatHz: 10));
 
-    blueBytes   = gen.blueNoiseWav(seconds: 18);   await Future.delayed(const Duration(milliseconds: 1));
-    violetBytes = gen.violetNoiseWav(seconds: 18); await Future.delayed(const Duration(milliseconds: 1));
-    windBytes   = gen.windSynthWav(seconds: 22, gustiness: 0.6); await Future.delayed(const Duration(milliseconds: 1));
-    rainBytes   = gen.rainSynthWav(seconds: 22, density: 0.4);    await Future.delayed(const Duration(milliseconds: 1));
-    wavesBytes  = gen.wavesSynthWav(seconds: 28, swellHz: 0.11, choppiness: 0.42); await Future.delayed(const Duration(milliseconds: 1));
-    fireBytes   = gen.fireplaceSynthWav(seconds: 22, crackleDensity: 0.7);
+    blueBytes    = await Isolate.run(() => NoiseAudio(sampleRate: 44100).blueNoiseWav(seconds: 18));
+    violetBytes  = await Isolate.run(() => NoiseAudio(sampleRate: 44100).violetNoiseWav(seconds: 18));
+    windBytes    = await Isolate.run(() => NoiseAudio(sampleRate: 44100).windSynthWav(seconds: 22, gustiness: 0.6));
+    rainBytes    = await Isolate.run(() => NoiseAudio(sampleRate: 44100).rainSynthWav(seconds: 22, density: 0.4));
+    wavesBytes   = await Isolate.run(() => NoiseAudio(sampleRate: 44100).wavesSynthWav(seconds: 28, swellHz: 0.11, choppiness: 0.42));
+    fireBytes    = await Isolate.run(() => NoiseAudio(sampleRate: 44100).fireplaceSynthWav(seconds: 22, crackleDensity: 0.7));
   }
 
   @override
@@ -1684,7 +1695,6 @@ class _VibesVisualizerState extends State<_VibesVisualizer> {
     );
   }
 }
-
 // ======= Modelos para assets y créditos =======
 class _AssetTrack {
   final String title;
