@@ -112,6 +112,17 @@ class _MixerPageState extends State<MixerPage> {
   // ======= Ambientes por assets (con categorías) =======
   final List<_AssetTrack> _assetDefs = [
     _AssetTrack(
+      'Sonido Agua',
+      'audio/ogg/running-stream-water-sound-239612.ogg',
+      'Musica Ambiente',
+      credit: Credit(
+        'Sonido Agua',
+        'Autor: AllyInNature ',
+        'Pixabay License',
+        'https://pixabay.com/es/users/allyinnature-39746607',
+      ),
+    ),
+    _AssetTrack(
       'Viento fuerte',
       'audio/ogg/viento-fuerte-64333.ogg',
       'Musica Ambiente',
