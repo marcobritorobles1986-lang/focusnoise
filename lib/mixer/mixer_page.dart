@@ -82,7 +82,7 @@ class _MixerPageState extends State<MixerPage> {
   _UiTheme get T => _themes[_themeIndex];
 
   // ======= Generadores offline =======
-  final gen = NoiseAudio(sampleRate: 44100);
+  final gen = NoiseAudio(sampleRate: 48000);
 
   // Players principales
   late final AudioPlayer whitePlayer;
