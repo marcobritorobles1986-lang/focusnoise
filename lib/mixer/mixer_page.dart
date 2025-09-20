@@ -252,6 +252,17 @@ class _MixerPageState extends State<MixerPage> {
         'https://pixabay.com/es/users/onetent-15616180',
       ),
     ),
+    _AssetTrack(
+      'Powerful Emotional Epic',
+      'audio/ogg/powerful-emotional-epic-174136.ogg',
+      'Musica Relajante',
+      credit: Credit(
+        'Epic, Emocional, Poderoso',
+        'Autor: Rockot',
+        'Pixabay License',
+        'https://pixabay.com/es/users/rockot-1947599',
+      ),
+    ),
   ];
 
   // Player/estado para cada asset
