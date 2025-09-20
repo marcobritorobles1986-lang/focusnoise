@@ -112,6 +112,28 @@ class _MixerPageState extends State<MixerPage> {
   // ======= Ambientes por assets (con categorías) =======
   final List<_AssetTrack> _assetDefs = [
     _AssetTrack(
+      'Viento fuerte',
+      'audio/ogg/viento-fuerte-64333.ogg',
+      'Musica Ambiente',
+      credit: Credit(
+        'Viento fuerte',
+        'Autor: freesound_community ',
+        'Pixabay License',
+        'https://pixabay.com/es/users/freesound_community-46691455',
+      ),
+    ),
+    _AssetTrack(
+      'Sonido viento',
+      'audio/ogg/sonido-de-viento-159611.ogg',
+      'Musica Ambiente',
+      credit: Credit(
+        'Sonido viento',
+        'Autor: Ninari ',
+        'Pixabay License',
+        'https://pixabay.com/es/users/ninari-32929677',
+      ),
+    ),
+    _AssetTrack(
       'Please Calm my Mind',
       'audio/ogg/please-calm-my-mind-125566.ogg',
       'Musica Relajante',
