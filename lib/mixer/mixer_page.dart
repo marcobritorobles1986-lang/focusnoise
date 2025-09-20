@@ -119,7 +119,7 @@ class _MixerPageState extends State<MixerPage> {
         'Olas',
         'Autor: freesound_community ',
         'Pixabay License',
-        '',
+        'https://pixabay.com/es/users/freesound_community-46691455',
       ),
     ),
     _AssetTrack(
