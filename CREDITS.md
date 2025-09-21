@@ -1,7 +1,5 @@
 # Créditos de audio (FocusNoise)
 
-Este proyecto utiliza audios de Pixabay. La atribución no es obligatoria según su licencia, pero se recomienda como muestra de agradecimiento. **No se redistribuyen los archivos de audio en forma standalone.** Los audios se usan integrados en la aplicación como parte de las mezclas.
-
 ## Pistas utilizadas
 <!-- Reemplaza con tus pistas reales -->
 - "Lluvia & Olas" — Autor: DonRain — Fuente: [https://pixabay.com/music/...](https://pixabay.com/es/users/donrain-26735743)
@@ -23,14 +21,3 @@ Este proyecto utiliza audios de Pixabay. La atribución no es obligatoria según
 - "Epic Relaxing Flute Music" — Autor: Onetent — Fuente: https://pixabay.com/es/users/onetent-15616180
 - "Fantasy Music Lumina" — Autor: Onetent — Fuente: https://pixabay.com/es/users/onetent-15616180
 - "Powerful Emotional Epic" — Autor: Rockot — Fuente: https://pixabay.com/es/users/rockot-1947599
-
-
-## Nota de licencia
-- Licencia Pixabay: uso gratuito, sin obligación de atribución.
-- Prohibido redistribuir el contenido en forma *standalone* (el archivo por sí mismo o sin transformación sustancial).
-- Los audios se utilizan exclusivamente **dentro** de la aplicación FocusNoise para fines de mezcla y reproducción.
-
-
-## Licencias de audio
-Este proyecto usa pistas de Pixabay (royalty-free). La atribución es recomendada y se detalla en [`CREDITS.md`](./CREDITS.md).
-Los audios no se distribuyen por separado ni se ofrecen para descarga como archivos individuales.
