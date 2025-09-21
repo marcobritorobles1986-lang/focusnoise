@@ -29,3 +29,10 @@ Este proyecto utiliza audios de Pixabay. La atribución no es obligatoria según
 - Licencia Pixabay: uso gratuito, sin obligación de atribución.
 - Prohibido redistribuir el contenido en forma *standalone* (el archivo por sí mismo o sin transformación sustancial).
 - Los audios se utilizan exclusivamente **dentro** de la aplicación FocusNoise para fines de mezcla y reproducción.
+
+  
+  ## Licencias de audio
+Este proyecto usa pistas de Pixabay (royalty-free). La atribución es recomendada y se detalla en [`CREDITS.md`](./CREDITS.md).
+Los audios no se distribuyen por separado ni se ofrecen para descarga como archivos individuales.
+
+  
