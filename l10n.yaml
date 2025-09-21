@@ -1,0 +1,7 @@
+# C:\src\Proyectos\focusnoise\l10n.yaml
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-dir: lib/l10n/generated
+output-localization-file: app_localizations.dart
+untranslated-messages-file: lib/l10n/untranslated.json
+use-deferred-loading: false

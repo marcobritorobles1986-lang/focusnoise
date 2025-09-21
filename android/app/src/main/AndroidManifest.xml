@@ -1,15 +1,31 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.focusnoise">
 
-    <!-- ADDED: Permisos para notificaciones (Android 13+) y servicio en primer plano -->
+    <!-- Conectividad (recomendado para Ads y en general) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Publicidad (ID de publicidad) -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
+
+    <!-- Notificaciones (Android 13+, usar la variante sdk-33) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Servicios en primer plano para reproducción de audio -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <application
-        android:label="Focus Noise"
         android:name="${applicationName}"
+        android:label="Focus Noise"
         android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher">
+        android:roundIcon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="false">
+
+        <!-- App ID de AdMob (TEST). Reemplaza por el tuyo antes de publicar -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
 
         <activity
             android:name=".MainActivity"
@@ -31,22 +47,19 @@
             </intent-filter>
         </activity>
 
-        <!-- ADDED: Servicio de audio_service para notificación y media session -->
+        <!-- Servicio de audio_service para notificación y media session -->
         <service
             android:name="com.ryanheise.audioservice.AudioService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
-        <!-- Si quieres un icono pequeño blanco personalizado para la notificación,
-             coloca drawable/ic_stat_focusnoise.png y pasa su nombre en AudioServiceConfig
-             (no se configura aquí en el manifest). -->
 
-        <!-- No borrar: usado por Flutter -->
+        <!-- Requerido por Flutter -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
 
-    <!-- (Opcional) Esto ya lo tenías: visibilidad para PROCESS_TEXT -->
+    <!-- (Opcional) Visibilidad para PROCESS_TEXT -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />

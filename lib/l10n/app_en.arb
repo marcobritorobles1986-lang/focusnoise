@@ -1,0 +1,16 @@
+{
+  "@@locale": "en",
+  "appTitle": "FocusNoise",
+  "credits": "Credits",
+  "savePreset": "Save preset",
+  "myPresets": "My presets",
+  "theme": "Theme",
+  "timer": "Timer",
+  "fadeStopAll": "Fade-out & stop all",
+  "masterVolume": "Master volume",
+  "generators": "Generators (offline)",
+  "tipMix": "Tip: mix 2–3 sources at moderate volumes (0.3–0.6) to avoid clipping.",
+  "language": "Language",
+  "language_en": "English",
+  "language_es": "Spanish"
+}

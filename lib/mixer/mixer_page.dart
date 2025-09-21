@@ -6,11 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter/services.dart' show rootBundle; // verificación de assets
-import 'dart:io' show Platform;                         // aviso iOS
+import 'package:flutter/services.dart' show rootBundle;
+import 'dart:io' show Platform;
+import 'package:google_mobile_ads/google_mobile_ads.dart'; // ADS
+import '../ads/ads_helper.dart';                           // ADS helper
 import '../audio/noise_audio.dart';
 import 'dart:isolate';
-
 
 class MixerPage extends StatefulWidget {
   const MixerPage({super.key});
@@ -73,6 +74,7 @@ class _MixerPageState extends State<MixerPage> {
   // ======= Claves de persistencia =======
   static const _kPresetIndexKey = 'presets_index'; // lista de nombres guardados
   static const _kThemeIdxKey = 'ui_theme_idx';
+  static const _kLangKey = 'app_lang';             // idioma guardado
 
   // Control de nombre para presets
   final TextEditingController _presetNameCtrl = TextEditingController();
@@ -80,6 +82,9 @@ class _MixerPageState extends State<MixerPage> {
   // Tema actual
   int _themeIndex = 0;
   _UiTheme get T => _themes[_themeIndex];
+
+  // Idioma actual (solo persistencia & UI local)
+  String? _langCode; // es | en | pt
 
   // ======= Generadores offline =======
   final gen = NoiseAudio(sampleRate: 48000);
@@ -90,7 +95,7 @@ class _MixerPageState extends State<MixerPage> {
   late final AudioPlayer brownPlayer;
   late final AudioPlayer binauralPlayer;
 
-  // Bytes on-demand (nullable para diferir generación)
+  // Bytes on-demand
   Uint8List? whiteBytes, pinkBytes, brownBytes, binauralBytes;
 
   bool whiteOn = false, pinkOn = false, brownOn = false, binauralOn = false;
@@ -345,12 +350,14 @@ class _MixerPageState extends State<MixerPage> {
   // ======= Master gain =======
   double _masterGain = 0.85; // volumen maestro 0..1
 
+  // ======= Ads =======
+  BannerAd? _banner;
+
   String _presetKey(String name) => 'preset:$name';
 
-  // ---- Helper: crear players listos para mezclar ----
   Future<AudioPlayer> _newLoopingPlayer() async {
     final p = AudioPlayer();
-    await p.setPlayerMode(PlayerMode.mediaPlayer); // permite mezcla
+    await p.setPlayerMode(PlayerMode.mediaPlayer);
     await p.setReleaseMode(ReleaseMode.loop);
     return p;
   }
@@ -359,20 +366,15 @@ class _MixerPageState extends State<MixerPage> {
   void initState() {
     super.initState();
     _initAudio();
-    @override
-    void initState() {
-      super.initState();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _initAudio(); // no esperes aquí
-      });
-    }
-
+    _banner = AdsHelper.createBanner();
+    AdsHelper.preloadInterstitial();
   }
 
   Future<void> _initAudio() async {
-    // Cargar tema persistido
     final sp = await SharedPreferences.getInstance();
+
     _themeIndex = (sp.getInt(_kThemeIdxKey) ?? 0).clamp(0, _themes.length - 1);
+    _langCode = sp.getString(_kLangKey) ?? 'es'; // carga idioma persistido
 
     // Players principales
     whitePlayer = await _newLoopingPlayer();
@@ -409,13 +411,11 @@ class _MixerPageState extends State<MixerPage> {
       _ready = true;
     });
 
-    // Precalentamiento en background (no bloquea UI)
     _precomputeInBackground();
   }
 
   // Genera todos los loops poco a poco para no congelar
   Future<void> _precomputeInBackground() async {
-    // Cada task corre en otro isolate; la UI no se congela
     whiteBytes   = await Isolate.run(() => NoiseAudio(sampleRate: 44100).whiteNoiseWav(seconds: 15));
     pinkBytes    = await Isolate.run(() => NoiseAudio(sampleRate: 44100).pinkNoiseWav(seconds: 15));
     brownBytes   = await Isolate.run(() => NoiseAudio(sampleRate: 44100).brownNoiseWav(seconds: 15));
@@ -450,19 +450,33 @@ class _MixerPageState extends State<MixerPage> {
     _sleepPrefadeTimer?.cancel();
     _uiTicker?.cancel();
 
+    _banner?.dispose();
+
     _presetNameCtrl.dispose();
     super.dispose();
   }
 
+  // ===== Idioma =====
+  Future<void> _applyLanguageChoice(String code) async {
+    if (_langCode == code) return;
+    setState(() => _langCode = code);
+    final sp = await SharedPreferences.getInstance();
+    await sp.setString(_kLangKey, code);
+
+    final name = switch (code) { 'en' => 'English', 'pt' => 'Português', _ => 'Español' };
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Idioma cambiado a $name. Reinicia la app para aplicar en todas las pantallas.')),
+    );
+  }
+
   // ======= Helpers de volumen/mezcla =======
 
-  // Aplica volumen real = volumen de pista * master
   Future<void> _applyVolume(AudioPlayer p, double vol) async {
     final v = (vol * _masterGain).clamp(0.0, 1.0);
     await p.setVolume(v);
   }
 
-  // Reaplica volúmenes actuales a TODO lo activo (tras cambiar master o cancelar timer)
   Future<void> _applyAllCurrentVolumes() async {
     if (whiteOn) await _applyVolume(whitePlayer, whiteVol);
     if (pinkOn) await _applyVolume(pinkPlayer, pinkVol);
@@ -481,7 +495,6 @@ class _MixerPageState extends State<MixerPage> {
     }
   }
 
-  // MINI FADE para acciones puntuales (encender/apagar pista)
   Future<void> _fade({
     required AudioPlayer p,
     required double from,
@@ -497,7 +510,6 @@ class _MixerPageState extends State<MixerPage> {
     }
   }
 
-  // Genera bytes si aún no existen
   Future<Uint8List> _ensureBytes(String id) async {
     switch (id) {
       case 'white':
@@ -525,7 +537,6 @@ class _MixerPageState extends State<MixerPage> {
     }
   }
 
-  // Reproducir/parar con generación on-demand (con fade y manejo de errores)
   Future<void> _toggleBytes(AudioPlayer p, String id, Uint8List? src, bool on, double vol) async {
     if (on) {
       try {
@@ -544,14 +555,12 @@ class _MixerPageState extends State<MixerPage> {
     } else {
       await _fade(p: p, from: (vol * _masterGain).clamp(0.0, 1.0), to: 0.0, ms: 220);
       await p.stop();
-      await p.setVolume(vol); // valor lógico base
+      await p.setVolume(vol);
     }
     if (mounted) setState(() {});
   }
 
   Future<void> _toggleAsset(AudioPlayer p, String assetPath, bool on, double vol) async {
-    // En pubspec declaraste: assets/audio/ogg/
-    // audioplayers v6 suele esperar el path SIN 'assets/' → 'audio/ogg/...'
     final String relPath = assetPath.startsWith('assets/')
         ? assetPath.substring('assets/'.length)
         : assetPath;
@@ -562,15 +571,11 @@ class _MixerPageState extends State<MixerPage> {
     if (on) {
       try {
         await p.setVolume(0.0);
-
-        // 1) intento estándar (lo que te funcionaba antes)
         await p.play(AssetSource(relPath));
       } catch (e1, st1) {
-        // 2) plan B: algunos entornos esperan el prefijo (no debería, pero probamos)
         try {
           await p.play(AssetSource(bundlePath));
         } catch (e2, st2) {
-          // Log útil para saber exactamente qué pasó
           // ignore: avoid_print
           print('[Mixer] Asset play failed\n'
               ' - rel: $relPath  err: $e1\n$st1\n'
@@ -583,7 +588,7 @@ class _MixerPageState extends State<MixerPage> {
             if (idx >= 0) _assetOn[idx] = false;
           }
           setState(() {});
-          return; // aborta
+          return;
         }
       }
 
@@ -607,8 +612,6 @@ class _MixerPageState extends State<MixerPage> {
     if (mounted) setState(() {});
   }
 
-
-  // Fade-out global (considera master)
   Future<void> _fadeAllOut({int ms = 800}) async {
     final steps = 16;
     final delay = Duration(milliseconds: (ms / steps).round());
@@ -671,7 +674,6 @@ class _MixerPageState extends State<MixerPage> {
     });
   }
 
-  // Pre-fade global (baja volumen, no detiene)
   Future<void> _fadeDownOnly({int ms = 5000}) async {
     final steps = 24;
     final delay = Duration(milliseconds: (ms / steps).round());
@@ -709,13 +711,11 @@ class _MixerPageState extends State<MixerPage> {
     }
   }
 
-  // Master gain setter
   Future<void> _setMasterGain(double g) async {
     setState(() => _masterGain = g.clamp(0.0, 1.0));
     await _applyAllCurrentVolumes();
   }
 
-  // Pausar/Reanudar TODO lo encendido
   Future<void> _pauseAll() async {
     if (!_anyTrackOn()) return;
     if (whiteOn) await whitePlayer.pause();
@@ -764,7 +764,6 @@ class _MixerPageState extends State<MixerPage> {
     return false;
   }
 
-  // Nivel de “actividad” aproximado de la mezcla para animar la visual
   double get _activityLevel {
     double sum = 0;
     if (whiteOn) sum += whiteVol;
@@ -785,7 +784,7 @@ class _MixerPageState extends State<MixerPage> {
     return (sum * _masterGain).clamp(0.0, 4.0) / 4.0;
   }
 
-  // ======= Presets "rápidos" (compat) =======
+  // ======= Presets rápidos =======
   Future<void> _savePreset() async {
     final sp = await SharedPreferences.getInstance();
     final data = _currentPresetPayload();
@@ -793,6 +792,7 @@ class _MixerPageState extends State<MixerPage> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Preset guardado')));
     }
+    AdsHelper.maybeShowInterstitial();
   }
 
   Future<void> _loadPreset() async {
@@ -808,7 +808,6 @@ class _MixerPageState extends State<MixerPage> {
     await _applyPresetData(Map<String, dynamic>.from(data));
   }
 
-  // ======= Presets con nombre (helpers) =======
   Map<String, dynamic> _currentPresetPayload() {
     return {
       'whiteOn': whiteOn, 'whiteVol': whiteVol,
@@ -854,7 +853,6 @@ class _MixerPageState extends State<MixerPage> {
       }
     });
 
-    // Ajusta reproducción según el estado cargado (on-demand)
     await _toggleBytes(whitePlayer,   'white',   whiteBytes,    whiteOn,    whiteVol);
     await _toggleBytes(pinkPlayer,    'pink',    pinkBytes,     pinkOn,     pinkVol);
     await _toggleBytes(brownPlayer,   'brown',   brownBytes,    brownOn,    brownVol);
@@ -899,6 +897,7 @@ class _MixerPageState extends State<MixerPage> {
     if (mounted && !silent) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preset "$name" guardado')));
     }
+    AdsHelper.maybeShowInterstitial();
   }
 
   Future<void> _loadPresetNamed(String name) async {
@@ -945,7 +944,6 @@ class _MixerPageState extends State<MixerPage> {
     }
   }
 
-  // ======= UI flujos de presets con nombre =======
   Future<bool> _confirmOverwrite(String name) async {
     return await showDialog<bool>(
       context: context,
@@ -1162,8 +1160,8 @@ class _MixerPageState extends State<MixerPage> {
       _sleepTimer = Timer(Duration(minutes: minutes), () async {
         await _fadeAllOut();
         if (mounted) setState(() => _sleepAt = null);
+        AdsHelper.maybeShowInterstitial();
       });
-      // Pre-fade 5s antes de terminar
       final until = _sleepAt!.difference(DateTime.now()) - const Duration(seconds: 5);
       if (!until.isNegative) {
         _sleepPrefadeTimer = Timer(until, () async {
@@ -1174,7 +1172,6 @@ class _MixerPageState extends State<MixerPage> {
         if (mounted) setState(() {});
       });
     } else {
-      // Cancelado: restaura volúmenes actuales por si estaba en pre-fade
       await _applyAllCurrentVolumes();
       setState(() {});
     }
@@ -1266,7 +1263,7 @@ class _MixerPageState extends State<MixerPage> {
               level: _activityLevel,
               bars: 28,
               height: 80,
-              speed: const Duration(milliseconds: 100), // un pelín más liviano
+              speed: const Duration(milliseconds: 100),
             ),
           ),
         ],
@@ -1391,6 +1388,8 @@ class _MixerPageState extends State<MixerPage> {
           IconButton(tooltip: 'Créditos', onPressed: _showCredits, icon: const Icon(Icons.info_outline)),
           IconButton(tooltip: 'Guardar preset con nombre', onPressed: _savePresetFlow, icon: const Icon(Icons.star_border)),
           IconButton(tooltip: 'Mis presets', onPressed: _showPresetPicker, icon: const Icon(Icons.playlist_add_check)),
+
+          // ===== Selector de Tema (intacto) =====
           PopupMenuButton<String>(
             tooltip: 'Tema',
             onSelected: (v) {
@@ -1411,8 +1410,33 @@ class _MixerPageState extends State<MixerPage> {
                 .toList(),
             icon: const Icon(Icons.palette_outlined),
           ),
+
+          // ===== NUEVO: Selector de idioma =====
+          PopupMenuButton<String>(
+            tooltip: 'Idioma',
+            icon: const Icon(Icons.language),
+            onSelected: (code) => _applyLanguageChoice(code),
+            itemBuilder: (ctx) => [
+              CheckedPopupMenuItem<String>(
+                value: 'es',
+                checked: (_langCode ?? 'es') == 'es',
+                child: const Text('Español'),
+              ),
+              CheckedPopupMenuItem<String>(
+                value: 'en',
+                checked: (_langCode ?? 'es') == 'en',
+                child: const Text('English'),
+              ),
+              CheckedPopupMenuItem<String>(
+                value: 'pt',
+                checked: (_langCode ?? 'es') == 'pt',
+                child: const Text('Português'),
+              ),
+            ],
+          ),
         ],
       ),
+
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -1647,6 +1671,12 @@ class _MixerPageState extends State<MixerPage> {
           const Text('Tip: mezcla 2–3 fuentes a volúmenes moderados (0.3–0.6) para evitar clipping.'),
         ],
       ),
+      bottomNavigationBar: (_banner == null)
+          ? null
+          : SizedBox(
+        height: _banner!.size.height.toDouble(),
+        child: AdWidget(ad: _banner!),
+      ),
     );
   }
 
@@ -1657,7 +1687,7 @@ class _MixerPageState extends State<MixerPage> {
   }
 }
 
-// ======= Visualizador de “vibraciones” liviano =======
+// ======= Visualizador de “vibraciones” optimizado =======
 class _VibesVisualizer extends StatefulWidget {
   final bool active;
   final double level; // 0..1
@@ -1691,12 +1721,55 @@ class _VibesVisualizerState extends State<_VibesVisualizer> {
   void initState() {
     super.initState();
     _vals = List<double>.filled(widget.bars, 0);
+    _maybeStartTicker();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VibesVisualizer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (widget.bars != oldWidget.bars) {
+      _vals = List<double>.filled(widget.bars, 0);
+    }
+
+    final speedChanged = widget.speed != oldWidget.speed;
+
+    if (widget.active) {
+      if (speedChanged) _restartTicker();
+      if (_ticker == null) _maybeStartTicker();
+    } else {
+      _stopTicker();
+    }
+  }
+
+  void _maybeStartTicker() {
+    if (_ticker != null) return;
     _ticker = Timer.periodic(widget.speed, (_) => _tick());
+  }
+
+  void _restartTicker() {
+    _stopTicker();
+    _maybeStartTicker();
+  }
+
+  void _stopTicker() {
+    _ticker?.cancel();
+    _ticker = null;
   }
 
   void _tick() {
     if (!mounted) return;
-    final base = widget.active ? (0.15 + 0.85 * widget.level.clamp(0, 1)) : 0.0;
+
+    if (!widget.active) {
+      setState(() {
+        for (int i = 0; i < _vals.length; i++) {
+          _vals[i] *= 0.85; // decay a cero si quedara corriendo
+        }
+      });
+      return;
+    }
+
+    final base = 0.15 + 0.85 * widget.level.clamp(0, 1);
     setState(() {
       for (int i = 0; i < _vals.length; i++) {
         final noise = _rnd.nextDouble();
@@ -1708,7 +1781,7 @@ class _VibesVisualizerState extends State<_VibesVisualizer> {
 
   @override
   void dispose() {
-    _ticker?.cancel();
+    _stopTicker();
     super.dispose();
   }
 
@@ -1750,6 +1823,7 @@ class _VibesVisualizerState extends State<_VibesVisualizer> {
     );
   }
 }
+
 // ======= Modelos para assets y créditos =======
 class _AssetTrack {
   final String title;
