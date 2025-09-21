@@ -1,4 +1,4 @@
-name: focus_noise_app
+name: FocusNoise
 description: A Flutter app that generates and mixes white, pink, brown noise and binaural beats on-device.
 publish_to: 'none'
 version: 1.0.0+1
