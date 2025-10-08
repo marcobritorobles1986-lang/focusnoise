@@ -1,4 +1,4 @@
-package com.example.focusnoise
+package com.marcobrito.focusnoise
 
 import io.flutter.embedding.android.FlutterActivity
 

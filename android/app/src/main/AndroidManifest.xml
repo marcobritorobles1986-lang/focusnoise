@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.focusnoise">
+    package="com.marcobrito.focusnoise">
 
     <!-- Conectividad (recomendado para Ads y en general) -->
     <uses-permission android:name="android.permission.INTERNET" />

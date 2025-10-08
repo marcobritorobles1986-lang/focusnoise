@@ -21,7 +21,7 @@ val keystoreProperties = Properties().apply {
 }
 
 // ❗ Ajusta tu package único
-val appId = "com.example.focusnoise" // <-- cámbialo a com.tuempresa.focusnoise
+val appId = "com.marcobrito.focusnoise" // <-- cámbialo a com.tuempresa.focusnoise
 
 android {
     namespace = appId
