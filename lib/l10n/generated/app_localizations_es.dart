@@ -47,4 +47,19 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get language_es => 'Español';
+
+  @override
+  String get changeLanguage => 'Cambiar idioma';
+
+  @override
+  String get useSystemLanguage => 'Usar idioma del sistema';
+
+  @override
+  String get helloWorld => 'Hola mundo';
+
+  @override
+  String get followingSystem => 'Siguiendo idioma del sistema';
+
+  @override
+  String get currentLanguage => 'Idioma actual';
 }

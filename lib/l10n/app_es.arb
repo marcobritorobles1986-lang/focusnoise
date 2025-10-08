@@ -12,5 +12,11 @@
   "tipMix": "Tip: mezcla 2–3 fuentes a volúmenes moderados (0.3–0.6) para evitar clipping.",
   "language": "Idioma",
   "language_en": "Inglés",
-  "language_es": "Español"
+  "language_es": "Español",
+
+  "changeLanguage": "Cambiar idioma",
+  "useSystemLanguage": "Usar idioma del sistema",
+  "helloWorld": "Hola mundo",
+  "followingSystem": "Siguiendo idioma del sistema",
+  "currentLanguage": "Idioma actual"
 }

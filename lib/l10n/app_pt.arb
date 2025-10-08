@@ -1,0 +1,17 @@
+{
+  "@@locale": "pt",
+  "appTitle": "FocusNoise",
+  "credits": "Créditos",
+  "savePreset": "Salvar predefinição",
+  "myPresets": "Minhas predefinições",
+  "theme": "Tema",
+  "timer": "Temporizador",
+  "fadeStopAll": "Fade-out e parar tudo",
+  "masterVolume": "Volume principal",
+  "generators": "Geradores (offline)",
+  "tipMix": "Dica: misture 2–3 fontes em volumes moderados (0.3–0.6) para evitar clipping.",
+  "language": "Idioma",
+  "language_en": "Inglês",
+  "language_es": "Espanhol",
+  "language_pt": "Português"
+}

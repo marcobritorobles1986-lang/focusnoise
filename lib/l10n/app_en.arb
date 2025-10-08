@@ -12,5 +12,11 @@
   "tipMix": "Tip: mix 2–3 sources at moderate volumes (0.3–0.6) to avoid clipping.",
   "language": "Language",
   "language_en": "English",
-  "language_es": "Spanish"
+  "language_es": "Spanish",
+
+  "changeLanguage": "Change language",
+  "useSystemLanguage": "Use system language",
+  "helloWorld": "Hello world",
+  "followingSystem": "Following system language",
+  "currentLanguage": "Current language"
 }

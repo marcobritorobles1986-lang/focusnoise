@@ -1,1 +1,9 @@
-{}
+{
+  "pt": [
+    "changeLanguage",
+    "useSystemLanguage",
+    "helloWorld",
+    "followingSystem",
+    "currentLanguage"
+  ]
+}
