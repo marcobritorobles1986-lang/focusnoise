@@ -1,30 +1,35 @@
+// lib/mixer/mixer_page.dart
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
-import 'package:flutter/material.dart';
+
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/material.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter/services.dart' show rootBundle;
-import 'dart:io' show Platform;
-import 'package:google_mobile_ads/google_mobile_ads.dart'; // ADS
-import '../ads/ads_helper.dart';                           // ADS helper
+
+import 'package:FocusNoise/i18n/locale_controller.dart';
+
+import '../ads/ads_helper.dart';
 import '../audio/noise_audio.dart';
-import 'dart:isolate';
 
 class MixerPage extends StatefulWidget {
-  const MixerPage({super.key});
+  const MixerPage({super.key, this.localeCtrl});
+  final LocaleController? localeCtrl;
+
   @override
   State<MixerPage> createState() => _MixerPageState();
 }
 
-/// ==== Tema UI (3 estilos) ====
+/// ==== UI Theme (3 styles) ====
 class _UiTheme {
   final String name;
   final Color main;
   final Color lite;
-  final Color chipSelectedBg; // con alpha
+  final Color chipSelectedBg; // with alpha
   final List<Color> headerGradient;
   final Color visBar;
   final Color visBgOverlay;
@@ -42,7 +47,7 @@ class _UiTheme {
 
 const _themes = <_UiTheme>[
   _UiTheme(
-    name: 'Océano',
+    name: 'Ocean',
     main: Color(0xFF64B5F6),
     lite: Color(0xFF90CAF9),
     chipSelectedBg: Color(0x2A64B5F6),
@@ -51,7 +56,7 @@ const _themes = <_UiTheme>[
     visBgOverlay: Color(0x143A86D1),
   ),
   _UiTheme(
-    name: 'Atardecer',
+    name: 'Sunset',
     main: Color(0xFFFF8A65),
     lite: Color(0xFFFFAB91),
     chipSelectedBg: Color(0x2AFF8A65),
@@ -60,7 +65,7 @@ const _themes = <_UiTheme>[
     visBgOverlay: Color(0x14FF6E40),
   ),
   _UiTheme(
-    name: 'Bosque',
+    name: 'Forest',
     main: Color(0xFF66BB6A),
     lite: Color(0xFFA5D6A7),
     chipSelectedBg: Color(0x2A66BB6A),
@@ -71,25 +76,24 @@ const _themes = <_UiTheme>[
 ];
 
 class _MixerPageState extends State<MixerPage> {
-  // ======= Claves de persistencia =======
-  static const _kPresetIndexKey = 'presets_index'; // lista de nombres guardados
+  // ======= Persistence keys =======
+  static const _kPresetIndexKey = 'presets_index';
   static const _kThemeIdxKey = 'ui_theme_idx';
-  static const _kLangKey = 'app_lang';             // idioma guardado
+  static const _kLangKey = 'app_lang'; // saved language code
 
-  // Control de nombre para presets
   final TextEditingController _presetNameCtrl = TextEditingController();
 
-  // Tema actual
+  // Current theme
   int _themeIndex = 0;
   _UiTheme get T => _themes[_themeIndex];
 
-  // Idioma actual (solo persistencia & UI local)
-  String? _langCode; // es | en | pt
+  // Current language (only for local Mixer UI selector)
+  String? _langCode; // en|es|pt
 
-  // ======= Generadores offline =======
+  // ======= Offline generators =======
   final gen = NoiseAudio(sampleRate: 48000);
 
-  // Players principales
+  // Main players
   late final AudioPlayer whitePlayer;
   late final AudioPlayer pinkPlayer;
   late final AudioPlayer brownPlayer;
@@ -101,7 +105,7 @@ class _MixerPageState extends State<MixerPage> {
   bool whiteOn = false, pinkOn = false, brownOn = false, binauralOn = false;
   double whiteVol = 0.5, pinkVol = 0.4, brownVol = 0.4, binauralVol = 0.3;
 
-  // Players adicionales offline
+  // Extra offline players
   late final AudioPlayer bluePlayer;
   late final AudioPlayer violetPlayer;
   late final AudioPlayer windPlayer;
@@ -114,249 +118,105 @@ class _MixerPageState extends State<MixerPage> {
   bool blueOn = false, violetOn = false, windOn = false, rainOn = false, wavesOn = false, fireOn = false;
   double blueVol = 0.35, violetVol = 0.30, windVol = 0.45, rainVol = 0.45, wavesVol = 0.45, fireVol = 0.40;
 
-  // ======= Ambientes por assets (con categorías) =======
+  // ======= Asset-based ambiences (with categories) =======
   final List<_AssetTrack> _assetDefs = [
-    _AssetTrack(
-      'Lluvia & Olas',
-      'audio/ogg/lluvia-amp-olas-110579.ogg',
-      'Musica Ambiente',
-      credit: Credit(
-        'Lluvia & Olas',
-        'Autor: DonRain ',
-        'Pixabay License',
-        'https://pixabay.com/es/users/donrain-26735743',
-      ),
-    ),
-    _AssetTrack(
-      'Olas',
-      'audio/ogg/olas-59925.ogg',
-      'Musica Ambiente',
-      credit: Credit(
-        'Olas',
-        'Autor: freesound_community ',
-        'Pixabay License',
-        'https://pixabay.com/es/users/freesound_community-46691455',
-      ),
-    ),
-    _AssetTrack(
-      'Sonido Agua',
-      'audio/ogg/running-stream-water-sound-239612.ogg',
-      'Musica Ambiente',
-      credit: Credit(
-        'Sonido Agua',
-        'Autor: AllyInNature ',
-        'Pixabay License',
-        'https://pixabay.com/es/users/allyinnature-39746607',
-      ),
-    ),
-    _AssetTrack(
-      'Viento fuerte',
-      'audio/ogg/viento-fuerte-64333.ogg',
-      'Musica Ambiente',
-      credit: Credit(
-        'Viento fuerte',
-        'Autor: freesound_community ',
-        'Pixabay License',
-        'https://pixabay.com/es/users/freesound_community-46691455',
-      ),
-    ),
-    _AssetTrack(
-      'Sonido viento',
-      'audio/ogg/sonido-de-viento-159611.ogg',
-      'Musica Ambiente',
-      credit: Credit(
-        'Sonido viento',
-        'Autor: Ninari ',
-        'Pixabay License',
-        'https://pixabay.com/es/users/ninari-32929677',
-      ),
-    ),
-    _AssetTrack(
-      'Please Calm my Mind',
-      'audio/ogg/please-calm-my-mind-125566.ogg',
-      'Musica Relajante',
-      credit: Credit(
-        'Please Calm my Mind',
-        'Autor: music_for_video',
-        'Pixabay License',
-        'https://pixabay.com/es/users/music_for_video-22579021/?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=125566',
-      ),
-    ),
-    _AssetTrack(
-      'Just Relax',
-      'audio/ogg/just-relax-11157.ogg',
-      'Musica Relajante',
-      credit: Credit(
-        'Just Relax',
-        'Autor: music_for_video',
-        'Pixabay License',
-        'https://pixabay.com/es/users/music_for_video-22579021/?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=125566',
-      ),
-    ),
-    _AssetTrack(
-      'Battle Of The Dragons',
-      'audio/ogg/battle-of-the-dragons-8037.ogg',
-      'Musica Epica',
-      credit: Credit(
-        'Battle Of The Dragons',
-        'Autor: ',
-        'Pixabay License',
-        'https://pixabay.com/es/music/titulo-principal-battle-of-the-dragons-8037',
-      ),
-    ),
-    _AssetTrack(
-      'Inspirational Uplifting Calm Piano',
-      'audio/ogg/inspirational-uplifting-calm-piano-254764.ogg',
-      'Musica Relajante',
-      credit: Credit(
-        'Inspirational Uplifting Calm Piano',
-        'Autor: NikitaKondrashev',
-        'Pixabay License',
-        'https://pixabay.com/es/users/nikitakondrashev-42823964',
-      ),
-    ),
-    _AssetTrack(
-      'Sedative',
-      'audio/ogg/sedative-110241.ogg',
-      'Sedante',
-      credit: Credit(
-        'Sedative',
-        'Autor: music_for_video',
-        'Pixabay License',
-        'https://pixabay.com/es/users/music_for_video-22579021',
-      ),
-    ),
-    _AssetTrack(
-      'The Cradle of your soul',
-      'audio/ogg/the-cradle-of-your-soul-15700.ogg',
-      'Guitarra Acustica',
-      credit: Credit(
-        'The Cradle of your soul',
-        'Autor: lemonmusicstudio',
-        'Pixabay License',
-        'https://pixabay.com/es/users/lemonmusicstudio-14942887',
-      ),
-    ),
-    _AssetTrack(
-      'Dark atmosphere with rain',
-      'audio/ogg/dark-atmosphere-with-rain-352570.ogg',
-      'Sonido ambiente',
-      credit: Credit(
-        'Dark atmosphere with rain',
-        'Autor: milagrosgomez',
-        'Pixabay License',
-        'https://pixabay.com/es/users/milagrosgomez-50598653',
-      ),
-    ),
-    _AssetTrack(
-      'Birds forest',
-      'audio/ogg/birds39-forest-20772.ogg',
-      'Sonido ambiente',
-      credit: Credit(
-        'Birds forest',
-        'Autor: ShidenBeatsMusic',
-        'Pixabay License',
-        'https://pixabay.com/es/users/shidenbeatsmusic-25676252',
-      ),
-    ),
-    _AssetTrack(
-      'sea',
-      'audio/ogg/sea-396080.ogg',
-      'Sonido ambiente',
-      credit: Credit(
-        'Birds forest',
-        'Autor: uchihadace1st',
-        'Pixabay License',
-        'https://pixabay.com/es/users/uchihadace1st-52017283',
-      ),
-    ),
-    _AssetTrack(
-      'YouTube folk music - River Knows My Name',
-      'audio/ogg/youtube-folk-music-river-knows-my-name-366869.ogg',
-      'Pop FolkFolk Indie',
-      credit: Credit(
-        'YouTube folk music - River Knows My Name',
-        'Autor: Diana_Production_Music',
-        'Pixabay License',
-        'https://pixabay.com/es/users/diana_production_music-46737158',
-      ),
-    ),
-    _AssetTrack(
-      'Morning Mist',
-      'audio/ogg/morning-mist-180089.ogg',
-      'Espiritual,Meditación',
-      credit: Credit(
-        'Morning Mist',
-        'Autor: The4Elements',
-        'Pixabay License',
-        'https://pixabay.com/es/users/the4elements-38522577',
-      ),
-    ),
-    _AssetTrack(
-      'Epic Relaxing Flute Music',
-      'audio/ogg/epic-relaxing-flute-music-144009.ogg',
-      'Musica Relajante',
-      credit: Credit(
-        'Epic Relaxing Flute Music',
-        'Autor: Onetent',
-        'Pixabay License',
-        'https://pixabay.com/es/users/onetent-15616180',
-      ),
-    ),
-    _AssetTrack(
-      'Fantasy Music Lumina',
-      'audio/ogg/fantasy-music-lumina-143991.ogg',
-      'Musica Relajante',
-      credit: Credit(
-        'Fantasy Music Lumina',
-        'Autor: Onetent',
-        'Pixabay License',
-        'https://pixabay.com/es/users/onetent-15616180',
-      ),
-    ),
-    _AssetTrack(
-      'Powerful Emotional Epic',
-      'audio/ogg/powerful-emotional-epic-174136.ogg',
-      'Musica Relajante',
-      credit: Credit(
-        'Epic, Emocional, Poderoso',
-        'Autor: Rockot',
-        'Pixabay License',
-        'https://pixabay.com/es/users/rockot-1947599',
-      ),
-    ),
+    _AssetTrack('Rain & Waves', 'audio/ogg/lluvia-amp-olas-110579.ogg', 'Ambient Music',
+        credit: Credit('Rain & Waves', 'Author: DonRain ', 'Pixabay License', 'https://pixabay.com/es/users/donrain-26735743')),
+    _AssetTrack('Waves', 'audio/ogg/olas-59925.ogg', 'Ambient Music',
+        credit: Credit('Waves', 'Author: freesound_community ', 'Pixabay License', 'https://pixabay.com/es/users/freesound_community-46691455')),
+    _AssetTrack('Running Water', 'audio/ogg/running-stream-water-sound-239612.ogg', 'Ambient Music',
+        credit: Credit('Running Water', 'Author: AllyInNature ', 'Pixabay License', 'https://pixabay.com/es/users/allyinnature-39746607')),
+    _AssetTrack('Strong Wind', 'audio/ogg/viento-fuerte-64333.ogg', 'Ambient Music',
+        credit: Credit('Strong Wind', 'Author: freesound_community ', 'Pixabay License', 'https://pixabay.com/es/users/freesound_community-46691455')),
+    _AssetTrack('Wind Sound', 'audio/ogg/sonido-de-viento-159611.ogg', 'Ambient Music',
+        credit: Credit('Wind Sound', 'Author: Ninari ', 'Pixabay License', 'https://pixabay.com/es/users/ninari-32929677')),
+    _AssetTrack('Please Calm my Mind', 'audio/ogg/please-calm-my-mind-125566.ogg', 'Relaxing Music',
+        credit: Credit('Please Calm my Mind', 'Author: music_for_video', 'Pixabay License',
+            'https://pixabay.com/es/users/music_for_video-22579021/?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=125566')),
+    _AssetTrack('Just Relax', 'audio/ogg/just-relax-11157.ogg', 'Relaxing Music',
+        credit: Credit('Just Relax', 'Author: music_for_video', 'Pixabay License',
+            'https://pixabay.com/es/users/music_for_video-22579021/?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=125566')),
+    _AssetTrack('Battle Of The Dragons', 'audio/ogg/battle-of-the-dragons-8037.ogg', 'Epic Music',
+        credit: Credit('Battle Of The Dragons', 'Author: ', 'Pixabay License', 'https://pixabay.com/es/music/titulo-principal-battle-of-the-dragons-8037')),
+    _AssetTrack('Inspirational Uplifting Calm Piano', 'audio/ogg/inspirational-uplifting-calm-piano-254764.ogg', 'Relaxing Music',
+        credit: Credit('Inspirational Uplifting Calm Piano', 'Author: NikitaKondrashev', 'Pixabay License',
+            'https://pixabay.com/es/users/nikitakondrashev-42823964')),
+    _AssetTrack('Sedative', 'audio/ogg/sedative-110241.ogg', 'Sedative',
+        credit: Credit('Sedative', 'Author: music_for_video', 'Pixabay License', 'https://pixabay.com/es/users/music_for_video-22579021')),
+    _AssetTrack('The Cradle of your Soul', 'audio/ogg/the-cradle-of-your-soul-15700.ogg', 'Acoustic Guitar',
+        credit: Credit('The Cradle of your Soul', 'Author: lemonmusicstudio', 'Pixabay License',
+            'https://pixabay.com/es/users/lemonmusicstudio-14942887')),
+    _AssetTrack('Dark Atmosphere with Rain', 'audio/ogg/dark-atmosphere-with-rain-352570.ogg', 'Soundscape',
+        credit: Credit('Dark Atmosphere with Rain', 'Author: milagrosgomez', 'Pixabay License',
+            'https://pixabay.com/es/users/milagrosgomez-50598653')),
+    _AssetTrack('Birds Forest', 'audio/ogg/birds39-forest-20772.ogg', 'Soundscape',
+        credit: Credit('Birds Forest', 'Author: ShidenBeatsMusic', 'Pixabay License',
+            'https://pixabay.com/es/users/shidenbeatsmusic-25676252')),
+    _AssetTrack('Sea', 'audio/ogg/sea-396080.ogg', 'Soundscape',
+        credit: Credit('Sea', 'Author: uchihadace1st', 'Pixabay License',
+            'https://pixabay.com/es/users/uchihadace1st-52017283')),
+    _AssetTrack('YouTube Folk Music - River Knows My Name', 'audio/ogg/youtube-folk-music-river-knows-my-name-366869.ogg', 'Pop / Folk / Indie',
+        credit: Credit('YouTube folk music - River Knows My Name', 'Author: Diana_Production_Music', 'Pixabay License',
+            'https://pixabay.com/es/users/diana_production_music-46737158')),
+    _AssetTrack('Morning Mist', 'audio/ogg/morning-mist-180089.ogg', 'Spiritual, Meditation',
+        credit: Credit('Morning Mist', 'Author: The4Elements', 'Pixabay License',
+            'https://pixabay.com/es/users/the4elements-38522577')),
+    _AssetTrack('Epic Relaxing Flute Music', 'audio/ogg/epic-relaxing-flute-music-144009.ogg', 'Relaxing Music',
+        credit: Credit('Epic Relaxing Flute Music', 'Author: Onetent', 'Pixabay License',
+            'https://pixabay.com/es/users/onetent-15616180')),
+    _AssetTrack('Fantasy Music Lumina', 'audio/ogg/fantasy-music-lumina-143991.ogg', 'Relaxing Music',
+        credit: Credit('Fantasy Music Lumina', 'Author: Onetent', 'Pixabay License',
+            'https://pixabay.com/es/users/onetent-15616180')),
+    _AssetTrack('Powerful Emotional Epic', 'audio/ogg/powerful-emotional-epic-174136.ogg', 'Relaxing Music',
+        credit: Credit('Epic, Emotional, Powerful', 'Author: Rockot', 'Pixabay License',
+            'https://pixabay.com/es/users/rockot-1947599')),
   ];
 
-  // Player/estado para cada asset
+  // Player/state per asset
   late final List<AudioPlayer> _assetPlayers;
   late final List<bool> _assetOn;
   late final List<double> _assetVol;
 
-  // ======= Categorías =======
-  late List<String> _categories; // ['Todos','Generadores', ...categorías únicas]
-  String _activeCategory = 'Todos';
+  // ======= Categories =======
+  late List<String> _categories; // ['All', 'Generators', ...unique categories]
+  String _activeCategory = 'All';
 
-  // ======= Timer de sueño =======
+  // ======= Sleep timer =======
   Timer? _sleepTimer;
   Timer? _uiTicker;
-  Timer? _sleepPrefadeTimer; // pre-fade 5s antes de terminar
-  DateTime? _sleepAt; // mostrar cuenta atrás
+  Timer? _sleepPrefadeTimer; // pre-fade 5s before end
+  DateTime? _sleepAt; // countdown
 
-  // ======= Control global (reproductor) =======
+  // ======= Global player control =======
   bool _pausedAll = false;
 
   bool _ready = false;
 
   // ======= Master gain =======
-  double _masterGain = 0.85; // volumen maestro 0..1
+  double _masterGain = 0.85; // 0..1
 
   // ======= Ads =======
   BannerAd? _banner;
 
   String _presetKey(String name) => 'preset:$name';
 
+  // ✅ AudioContext to allow mixing across multiple AudioPlayers
+  static final AudioContext _mixContext = AudioContext(
+    android: AudioContextAndroid(
+      isSpeakerphoneOn: false,
+      contentType: AndroidContentType.music,
+      usageType: AndroidUsageType.media,
+      audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+    ),
+    iOS: AudioContextIOS(
+      category: AVAudioSessionCategory.playback,
+      options: {AVAudioSessionOptions.mixWithOthers},
+    ),
+  );
+
   Future<AudioPlayer> _newLoopingPlayer() async {
     final p = AudioPlayer();
+    await p.setAudioContext(_mixContext);
     await p.setPlayerMode(PlayerMode.mediaPlayer);
     await p.setReleaseMode(ReleaseMode.loop);
     return p;
@@ -374,15 +234,15 @@ class _MixerPageState extends State<MixerPage> {
     final sp = await SharedPreferences.getInstance();
 
     _themeIndex = (sp.getInt(_kThemeIdxKey) ?? 0).clamp(0, _themes.length - 1);
-    _langCode = sp.getString(_kLangKey) ?? 'es'; // carga idioma persistido
+    _langCode = sp.getString(_kLangKey) ?? 'en'; // default English
 
-    // Players principales
+    // Main players
     whitePlayer = await _newLoopingPlayer();
     pinkPlayer = await _newLoopingPlayer();
     brownPlayer = await _newLoopingPlayer();
     binauralPlayer = await _newLoopingPlayer();
 
-    // Players nuevos offline
+    // New offline players
     bluePlayer = await _newLoopingPlayer();
     violetPlayer = await _newLoopingPlayer();
     windPlayer = await _newLoopingPlayer();
@@ -390,43 +250,43 @@ class _MixerPageState extends State<MixerPage> {
     wavesPlayer = await _newLoopingPlayer();
     fireSynthPlayer = await _newLoopingPlayer();
 
-    // Players para assets
+    // Asset players
     _assetPlayers = [];
     for (var i = 0; i < _assetDefs.length; i++) {
-      _assetPlayers.add(await _newLoopingPlayer());
+      final ap = await _newLoopingPlayer();
+      _assetPlayers.add(ap);
     }
 
     _assetOn = List<bool>.filled(_assetDefs.length, false);
     _assetVol = List<double>.filled(_assetDefs.length, 0.4);
 
-    // Categorías (únicas) + fijos
-    _categories = [
-      'Todos',
-      'Generadores',
-      ..._assetDefs.map((e) => e.category).toSet(),
-    ];
+    // Categories (unique) + fixed
+    _categories = ['All', 'Generators', ..._assetDefs.map((e) => e.category).toSet()];
 
     setState(() {
-      _activeCategory = 'Todos';
+      _activeCategory = 'All';
       _ready = true;
     });
 
     _precomputeInBackground();
   }
 
-  // Genera todos los loops poco a poco para no congelar
+  // Generate loops gradually to avoid jank
   Future<void> _precomputeInBackground() async {
-    whiteBytes   = await Isolate.run(() => NoiseAudio(sampleRate: 44100).whiteNoiseWav(seconds: 15));
-    pinkBytes    = await Isolate.run(() => NoiseAudio(sampleRate: 44100).pinkNoiseWav(seconds: 15));
-    brownBytes   = await Isolate.run(() => NoiseAudio(sampleRate: 44100).brownNoiseWav(seconds: 15));
-    binauralBytes= await Isolate.run(() => NoiseAudio(sampleRate: 44100).binauralBeatWav(seconds: 15, baseHz: 220, beatHz: 10));
+    whiteBytes = await Isolate.run(() => NoiseAudio(sampleRate: 44100).whiteNoiseWav(seconds: 15));
+    pinkBytes = await Isolate.run(() => NoiseAudio(sampleRate: 44100).pinkNoiseWav(seconds: 15));
+    brownBytes = await Isolate.run(() => NoiseAudio(sampleRate: 44100).brownNoiseWav(seconds: 15));
+    binauralBytes =
+    await Isolate.run(() => NoiseAudio(sampleRate: 44100).binauralBeatWav(seconds: 15, baseHz: 220, beatHz: 10));
 
-    blueBytes    = await Isolate.run(() => NoiseAudio(sampleRate: 44100).blueNoiseWav(seconds: 18));
-    violetBytes  = await Isolate.run(() => NoiseAudio(sampleRate: 44100).violetNoiseWav(seconds: 18));
-    windBytes    = await Isolate.run(() => NoiseAudio(sampleRate: 44100).windSynthWav(seconds: 22, gustiness: 0.6));
-    rainBytes    = await Isolate.run(() => NoiseAudio(sampleRate: 44100).rainSynthWav(seconds: 22, density: 0.4));
-    wavesBytes   = await Isolate.run(() => NoiseAudio(sampleRate: 44100).wavesSynthWav(seconds: 28, swellHz: 0.11, choppiness: 0.42));
-    fireBytes    = await Isolate.run(() => NoiseAudio(sampleRate: 44100).fireplaceSynthWav(seconds: 22, crackleDensity: 0.7));
+    blueBytes = await Isolate.run(() => NoiseAudio(sampleRate: 44100).blueNoiseWav(seconds: 18));
+    violetBytes = await Isolate.run(() => NoiseAudio(sampleRate: 44100).violetNoiseWav(seconds: 18));
+    windBytes = await Isolate.run(() => NoiseAudio(sampleRate: 44100).windSynthWav(seconds: 22, gustiness: 0.6));
+    rainBytes = await Isolate.run(() => NoiseAudio(sampleRate: 44100).rainSynthWav(seconds: 22, density: 0.4));
+    wavesBytes =
+    await Isolate.run(() => NoiseAudio(sampleRate: 44100).wavesSynthWav(seconds: 28, swellHz: 0.11, choppiness: 0.42));
+    fireBytes =
+    await Isolate.run(() => NoiseAudio(sampleRate: 44100).fireplaceSynthWav(seconds: 22, crackleDensity: 0.7));
   }
 
   @override
@@ -456,22 +316,24 @@ class _MixerPageState extends State<MixerPage> {
     super.dispose();
   }
 
-  // ===== Idioma =====
+  // ===== Language (persist & optionally apply globally) =====
   Future<void> _applyLanguageChoice(String code) async {
     if (_langCode == code) return;
     setState(() => _langCode = code);
     final sp = await SharedPreferences.getInstance();
     await sp.setString(_kLangKey, code);
 
-    final name = switch (code) { 'en' => 'English', 'pt' => 'Português', _ => 'Español' };
+    // Apply app-wide in hot if controller is provided
+    widget.localeCtrl?.setLocale(Locale(code));
+
+    final name = switch (code) { 'es' => 'Español', 'pt' => 'Português', _ => 'English' };
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Idioma cambiado a $name. Reinicia la app para aplicar en todas las pantallas.')),
+      SnackBar(content: Text('Language changed to $name.')),
     );
   }
 
-  // ======= Helpers de volumen/mezcla =======
-
+  // ======= Volume/mix helpers =======
   Future<void> _applyVolume(AudioPlayer p, double vol) async {
     final v = (vol * _masterGain).clamp(0.0, 1.0);
     await p.setVolume(v);
@@ -533,7 +395,7 @@ class _MixerPageState extends State<MixerPage> {
       case 'fire':
         return fireBytes ??= gen.fireplaceSynthWav(seconds: 22, crackleDensity: 0.7);
       default:
-        throw StateError('id desconocido: $id');
+        throw StateError('unknown id: $id');
     }
   }
 
@@ -545,11 +407,9 @@ class _MixerPageState extends State<MixerPage> {
         await p.play(BytesSource(bytes));
         await _fade(p: p, from: 0.0, to: (vol * _masterGain).clamp(0.0, 1.0), ms: 280);
         if (_pausedAll) _pausedAll = false;
-      } catch (e) {
+      } catch (_) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('No se pudo reproducir $id')),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not play $id.')));
         }
       }
     } else {
@@ -561,29 +421,19 @@ class _MixerPageState extends State<MixerPage> {
   }
 
   Future<void> _toggleAsset(AudioPlayer p, String assetPath, bool on, double vol) async {
-    final String relPath = assetPath.startsWith('assets/')
-        ? assetPath.substring('assets/'.length)
-        : assetPath;
-    final String bundlePath = assetPath.startsWith('assets/')
-        ? assetPath
-        : 'assets/$assetPath';
+    final String relPath = assetPath.startsWith('assets/') ? assetPath.substring('assets/'.length) : assetPath;
+    final String bundlePath = assetPath.startsWith('assets/') ? assetPath : 'assets/$assetPath';
 
     if (on) {
       try {
         await p.setVolume(0.0);
         await p.play(AssetSource(relPath));
-      } catch (e1, st1) {
+      } catch (_) {
         try {
           await p.play(AssetSource(bundlePath));
-        } catch (e2, st2) {
-          // ignore: avoid_print
-          print('[Mixer] Asset play failed\n'
-              ' - rel: $relPath  err: $e1\n$st1\n'
-              ' - bun: $bundlePath err: $e2\n$st2\n');
+        } catch (e2) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('No se pudo reproducir: $relPath')),
-            );
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not play: $relPath')));
             final idx = _assetDefs.indexWhere((t) => t.assetPath == assetPath);
             if (idx >= 0) _assetOn[idx] = false;
           }
@@ -591,21 +441,10 @@ class _MixerPageState extends State<MixerPage> {
           return;
         }
       }
-
-      await _fade(
-        p: p,
-        from: 0.0,
-        to: (vol * _masterGain).clamp(0.0, 1.0),
-        ms: 280,
-      );
+      await _fade(p: p, from: 0.0, to: (vol * _masterGain).clamp(0.0, 1.0), ms: 280);
       if (_pausedAll) _pausedAll = false;
     } else {
-      await _fade(
-        p: p,
-        from: (vol * _masterGain).clamp(0.0, 1.0),
-        to: 0.0,
-        ms: 220,
-      );
+      await _fade(p: p, from: (vol * _masterGain).clamp(0.0, 1.0), to: 0.0, ms: 220);
       await p.stop();
       await p.setVolume(vol);
     }
@@ -616,16 +455,8 @@ class _MixerPageState extends State<MixerPage> {
     final steps = 16;
     final delay = Duration(milliseconds: (ms / steps).round());
 
-    final w = whiteVol * _masterGain,
-        p = pinkVol * _masterGain,
-        b = brownVol * _masterGain,
-        bb = binauralVol * _masterGain;
-    final bl = blueVol * _masterGain,
-        vi = violetVol * _masterGain,
-        wi = windVol * _masterGain,
-        ra = rainVol * _masterGain,
-        wa = wavesVol * _masterGain,
-        fi = fireVol * _masterGain;
+    final w = whiteVol * _masterGain, p = pinkVol * _masterGain, b = brownVol * _masterGain, bb = binauralVol * _masterGain;
+    final bl = blueVol * _masterGain, vi = violetVol * _masterGain, wi = windVol * _masterGain, ra = rainVol * _masterGain, wa = wavesVol * _masterGain, fi = fireVol * _masterGain;
     final assetsVolCopy = _assetVol.map((v) => v * _masterGain).toList(growable: false);
 
     for (int i = 0; i < steps; i++) {
@@ -634,14 +465,12 @@ class _MixerPageState extends State<MixerPage> {
       if (pinkOn) await pinkPlayer.setVolume(p * k);
       if (brownOn) await brownPlayer.setVolume(b * k);
       if (binauralOn) await binauralPlayer.setVolume(bb * k);
-
       if (blueOn) await bluePlayer.setVolume(bl * k);
       if (violetOn) await violetPlayer.setVolume(vi * k);
       if (windOn) await windPlayer.setVolume(wi * k);
       if (rainOn) await rainPlayer.setVolume(ra * k);
       if (wavesOn) await wavesPlayer.setVolume(wa * k);
       if (fireOn) await fireSynthPlayer.setVolume(fi * k);
-
       for (int a = 0; a < _assetPlayers.length; a++) {
         if (_assetOn[a]) await _assetPlayers[a].setVolume(assetsVolCopy[a] * k);
       }
@@ -652,14 +481,12 @@ class _MixerPageState extends State<MixerPage> {
     if (pinkOn) await pinkPlayer.stop();
     if (brownOn) await brownPlayer.stop();
     if (binauralOn) await binauralPlayer.stop();
-
     if (blueOn) await bluePlayer.stop();
     if (violetOn) await violetPlayer.stop();
     if (windOn) await windPlayer.stop();
     if (rainOn) await rainPlayer.stop();
     if (wavesOn) await wavesPlayer.stop();
     if (fireOn) await fireSynthPlayer.stop();
-
     for (int a = 0; a < _assetPlayers.length; a++) {
       if (_assetOn[a]) await _assetPlayers[a].stop();
     }
@@ -678,16 +505,8 @@ class _MixerPageState extends State<MixerPage> {
     final steps = 24;
     final delay = Duration(milliseconds: (ms / steps).round());
 
-    final w = whiteVol * _masterGain,
-        p = pinkVol * _masterGain,
-        b = brownVol * _masterGain,
-        bb = binauralVol * _masterGain;
-    final bl = blueVol * _masterGain,
-        vi = violetVol * _masterGain,
-        wi = windVol * _masterGain,
-        ra = rainVol * _masterGain,
-        wa = wavesVol * _masterGain,
-        fi = fireVol * _masterGain;
+    final w = whiteVol * _masterGain, p = pinkVol * _masterGain, b = brownVol * _masterGain, bb = binauralVol * _masterGain;
+    final bl = blueVol * _masterGain, vi = violetVol * _masterGain, wi = windVol * _masterGain, ra = rainVol * _masterGain, wa = wavesVol * _masterGain, fi = fireVol * _masterGain;
     final assetsVolCopy = _assetVol.map((v) => v * _masterGain).toList(growable: false);
 
     for (int i = 0; i < steps; i++) {
@@ -696,14 +515,12 @@ class _MixerPageState extends State<MixerPage> {
       if (pinkOn) await pinkPlayer.setVolume(p * k);
       if (brownOn) await brownPlayer.setVolume(b * k);
       if (binauralOn) await binauralPlayer.setVolume(bb * k);
-
       if (blueOn) await bluePlayer.setVolume(bl * k);
       if (violetOn) await violetPlayer.setVolume(vi * k);
       if (windOn) await windPlayer.setVolume(wi * k);
       if (rainOn) await rainPlayer.setVolume(ra * k);
       if (wavesOn) await wavesPlayer.setVolume(wa * k);
       if (fireOn) await fireSynthPlayer.setVolume(fi * k);
-
       for (int a = 0; a < _assetPlayers.length; a++) {
         if (_assetOn[a]) await _assetPlayers[a].setVolume(assetsVolCopy[a] * k);
       }
@@ -757,7 +574,9 @@ class _MixerPageState extends State<MixerPage> {
   }
 
   bool _anyTrackOn() {
-    if (whiteOn || pinkOn || brownOn || binauralOn || blueOn || violetOn || windOn || rainOn || wavesOn || fireOn) return true;
+    if (whiteOn || pinkOn || brownOn || binauralOn || blueOn || violetOn || windOn || rainOn || wavesOn || fireOn) {
+      return true;
+    }
     for (final b in _assetOn) {
       if (b) return true;
     }
@@ -784,13 +603,13 @@ class _MixerPageState extends State<MixerPage> {
     return (sum * _masterGain).clamp(0.0, 4.0) / 4.0;
   }
 
-  // ======= Presets rápidos =======
+  // ======= Presets (quick & named) =======
   Future<void> _savePreset() async {
     final sp = await SharedPreferences.getInstance();
     final data = _currentPresetPayload();
     await sp.setString('preset_default', jsonEncode(data));
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Preset guardado')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Preset saved.')));
     }
     AdsHelper.maybeShowInterstitial();
   }
@@ -800,7 +619,7 @@ class _MixerPageState extends State<MixerPage> {
     final raw = sp.getString('preset_default');
     if (raw == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No hay preset guardado')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No preset saved.')));
       }
       return;
     }
@@ -810,67 +629,81 @@ class _MixerPageState extends State<MixerPage> {
 
   Map<String, dynamic> _currentPresetPayload() {
     return {
-      'whiteOn': whiteOn, 'whiteVol': whiteVol,
-      'pinkOn': pinkOn, 'pinkVol': pinkVol,
-      'brownOn': brownOn, 'brownVol': brownVol,
-      'binauralOn': binauralOn, 'binauralVol': binauralVol,
-
-      'blueOn': blueOn, 'blueVol': blueVol,
-      'violetOn': violetOn, 'violetVol': violetVol,
-      'windOn': windOn, 'windVol': windVol,
-      'rainOn': rainOn, 'rainVol': rainVol,
-      'wavesOn': wavesOn, 'wavesVol': wavesVol,
-      'fireOn': fireOn, 'fireVol': fireVol,
-
-      'assets': List.generate(_assetDefs.length, (i) => {
-        'on': _assetOn[i],
-        'vol': _assetVol[i],
-        'key': _assetDefs[i].assetPath,
-      }),
+      'whiteOn': whiteOn,
+      'whiteVol': whiteVol,
+      'pinkOn': pinkOn,
+      'pinkVol': pinkVol,
+      'brownOn': brownOn,
+      'brownVol': brownVol,
+      'binauralOn': binauralOn,
+      'binauralVol': binauralVol,
+      'blueOn': blueOn,
+      'blueVol': blueVol,
+      'violetOn': violetOn,
+      'violetVol': violetVol,
+      'windOn': windOn,
+      'windVol': windVol,
+      'rainOn': rainOn,
+      'rainVol': rainVol,
+      'wavesOn': wavesOn,
+      'wavesVol': wavesVol,
+      'fireOn': fireOn,
+      'fireVol': fireVol,
+      'assets': List.generate(_assetDefs.length, (i) => {'on': _assetOn[i], 'vol': _assetVol[i], 'key': _assetDefs[i].assetPath}),
     };
   }
 
   Future<void> _applyPresetData(Map<String, dynamic> data) async {
     setState(() {
-      whiteOn = data['whiteOn'] ?? false;   whiteVol = (data['whiteVol'] ?? 0.5).toDouble();
-      pinkOn  = data['pinkOn']  ?? false;   pinkVol  = (data['pinkVol']  ?? 0.4).toDouble();
-      brownOn = data['brownOn'] ?? false;   brownVol = (data['brownVol'] ?? 0.4).toDouble();
-      binauralOn = data['binauralOn'] ?? false; binauralVol = (data['binauralVol'] ?? 0.3).toDouble();
+      whiteOn = data['whiteOn'] ?? false;
+      whiteVol = (data['whiteVol'] ?? 0.5).toDouble();
+      pinkOn = data['pinkOn'] ?? false;
+      pinkVol = (data['pinkVol'] ?? 0.4).toDouble();
+      brownOn = data['brownOn'] ?? false;
+      brownVol = (data['brownVol'] ?? 0.4).toDouble();
+      binauralOn = data['binauralOn'] ?? false;
+      binauralVol = (data['binauralVol'] ?? 0.3).toDouble();
 
-      blueOn   = data['blueOn']   ?? false; blueVol   = (data['blueVol']   ?? 0.35).toDouble();
-      violetOn = data['violetOn'] ?? false; violetVol = (data['violetVol'] ?? 0.30).toDouble();
-      windOn   = data['windOn']   ?? false; windVol   = (data['windVol']   ?? 0.45).toDouble();
-      rainOn   = data['rainOn']   ?? false; rainVol   = (data['rainVol']   ?? 0.45).toDouble();
-      wavesOn  = data['wavesOn']  ?? false; wavesVol  = (data['wavesVol']  ?? 0.45).toDouble();
-      fireOn   = data['fireOn']   ?? false; fireVol   = (data['fireVol']   ?? 0.40).toDouble();
+      blueOn = data['blueOn'] ?? false;
+      blueVol = (data['blueVol'] ?? 0.35).toDouble();
+      violetOn = data['violetOn'] ?? false;
+      violetVol = (data['violetVol'] ?? 0.30).toDouble();
+      windOn = data['windOn'] ?? false;
+      windVol = (data['windVol'] ?? 0.45).toDouble();
+      rainOn = data['rainOn'] ?? false;
+      rainVol = (data['rainVol'] ?? 0.45).toDouble();
+      wavesOn = data['wavesOn'] ?? false;
+      wavesVol = (data['wavesVol'] ?? 0.45).toDouble();
+      fireOn = data['fireOn'] ?? false;
+      fireVol = (data['fireVol'] ?? 0.40).toDouble();
 
       if (data['assets'] is List) {
         final list = data['assets'] as List;
         for (int i = 0; i < _assetDefs.length && i < list.length; i++) {
-          _assetOn[i]  = (list[i]['on']  ?? false) as bool;
+          _assetOn[i] = (list[i]['on'] ?? false) as bool;
           _assetVol[i] = (list[i]['vol'] ?? 0.4).toDouble();
         }
       }
     });
 
-    await _toggleBytes(whitePlayer,   'white',   whiteBytes,    whiteOn,    whiteVol);
-    await _toggleBytes(pinkPlayer,    'pink',    pinkBytes,     pinkOn,     pinkVol);
-    await _toggleBytes(brownPlayer,   'brown',   brownBytes,    brownOn,    brownVol);
-    await _toggleBytes(binauralPlayer,'binaural',binauralBytes, binauralOn, binauralVol);
+    await _toggleBytes(whitePlayer, 'white', whiteBytes, whiteOn, whiteVol);
+    await _toggleBytes(pinkPlayer, 'pink', pinkBytes, pinkOn, pinkVol);
+    await _toggleBytes(brownPlayer, 'brown', brownBytes, brownOn, brownVol);
+    await _toggleBytes(binauralPlayer, 'binaural', binauralBytes, binauralOn, binauralVol);
 
-    await _toggleBytes(bluePlayer,    'blue',    blueBytes,     blueOn,     blueVol);
-    await _toggleBytes(violetPlayer,  'violet',  violetBytes,   violetOn,   violetVol);
-    await _toggleBytes(windPlayer,    'wind',    windBytes,     windOn,     windVol);
-    await _toggleBytes(rainPlayer,    'rain',    rainBytes,     rainOn,     rainVol);
-    await _toggleBytes(wavesPlayer,   'waves',   wavesBytes,    wavesOn,    wavesVol);
-    await _toggleBytes(fireSynthPlayer,'fire',   fireBytes,     fireOn,     fireVol);
+    await _toggleBytes(bluePlayer, 'blue', blueBytes, blueOn, blueVol);
+    await _toggleBytes(violetPlayer, 'violet', violetBytes, violetOn, violetVol);
+    await _toggleBytes(windPlayer, 'wind', windBytes, windOn, windVol);
+    await _toggleBytes(rainPlayer, 'rain', rainBytes, rainOn, rainVol);
+    await _toggleBytes(wavesPlayer, 'waves', wavesBytes, wavesOn, wavesVol);
+    await _toggleBytes(fireSynthPlayer, 'fire', fireBytes, fireOn, fireVol);
 
     for (int i = 0; i < _assetDefs.length; i++) {
       await _toggleAsset(_assetPlayers[i], _assetDefs[i].assetPath, _assetOn[i], _assetVol[i]);
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Preset cargado')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Preset loaded.')));
     }
   }
 
@@ -895,7 +728,7 @@ class _MixerPageState extends State<MixerPage> {
     final data = _currentPresetPayload();
     await sp.setString(_presetKey(name), jsonEncode(data));
     if (mounted && !silent) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preset "$name" guardado')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preset "$name" saved.')));
     }
     AdsHelper.maybeShowInterstitial();
   }
@@ -905,7 +738,7 @@ class _MixerPageState extends State<MixerPage> {
     final raw = sp.getString(_presetKey(name));
     if (raw == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No se encontró "$name"')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('"$name" not found.')));
       }
       return;
     }
@@ -920,7 +753,7 @@ class _MixerPageState extends State<MixerPage> {
     await _setPresetNames(names);
     await sp.remove(_presetKey(name));
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preset "$name" eliminado')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preset "$name" deleted.')));
     }
   }
 
@@ -940,7 +773,7 @@ class _MixerPageState extends State<MixerPage> {
     await sp.setString(_presetKey(newName), raw);
     await sp.remove(_presetKey(oldName));
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Renombrado a "$newName"')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Renamed to "$newName".')));
     }
   }
 
@@ -948,11 +781,11 @@ class _MixerPageState extends State<MixerPage> {
     return await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Sobrescribir preset'),
-        content: Text('Ya existe un preset llamado "$name". ¿Quieres sobrescribirlo?'),
+        title: const Text('Overwrite preset'),
+        content: Text('A preset named "$name" already exists. Overwrite it?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sobrescribir')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Overwrite')),
         ],
       ),
     ) ?? false;
@@ -965,20 +798,17 @@ class _MixerPageState extends State<MixerPage> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Guardar preset'),
+        title: const Text('Save preset'),
         content: TextField(
           controller: _presetNameCtrl,
           autofocus: true,
           textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(
-            labelText: 'Nombre del preset',
-            hintText: 'Ej.: Foco Suave',
-          ),
+          decoration: const InputDecoration(labelText: 'Preset name', hintText: 'e.g., Soft Focus'),
           onSubmitted: (_) => Navigator.pop(ctx, _presetNameCtrl.text.trim()),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, _presetNameCtrl.text.trim()), child: const Text('Guardar')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, _presetNameCtrl.text.trim()), child: const Text('Save')),
         ],
       ),
     );
@@ -987,7 +817,7 @@ class _MixerPageState extends State<MixerPage> {
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('El nombre no puede estar vacío')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name cannot be empty.')));
       return;
     }
 
@@ -1009,13 +839,13 @@ class _MixerPageState extends State<MixerPage> {
           children: [
             const ListTile(
               leading: Icon(Icons.star_border),
-              title: Text('Tus presets'),
-              subtitle: Text('Toca para cargar. Mantén pulsado para renombrar.'),
+              title: Text('Your presets'),
+              subtitle: Text('Tap to load. Long-press to rename.'),
             ),
             if (names.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(16),
-                child: Text('Aún no tienes presets. Guarda uno con el botón de la estrella.'),
+                child: Text('You have no presets yet. Save one with the star button.'),
               ),
             if (names.isNotEmpty)
               Expanded(
@@ -1036,16 +866,16 @@ class _MixerPageState extends State<MixerPage> {
                         final newName = await showDialog<String>(
                           context: context,
                           builder: (dCtx) => AlertDialog(
-                            title: const Text('Renombrar preset'),
+                            title: const Text('Rename preset'),
                             content: TextField(
                               controller: _presetNameCtrl,
                               autofocus: true,
-                              decoration: const InputDecoration(labelText: 'Nuevo nombre'),
+                              decoration: const InputDecoration(labelText: 'New name'),
                               onSubmitted: (_) => Navigator.pop(dCtx, _presetNameCtrl.text.trim()),
                             ),
                             actions: [
-                              TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancelar')),
-                              FilledButton(onPressed: () => Navigator.pop(dCtx, _presetNameCtrl.text.trim()), child: const Text('Guardar')),
+                              TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
+                              FilledButton(onPressed: () => Navigator.pop(dCtx, _presetNameCtrl.text.trim()), child: const Text('Save')),
                             ],
                           ),
                         );
@@ -1066,11 +896,11 @@ class _MixerPageState extends State<MixerPage> {
                           final sure = await showDialog<bool>(
                             context: context,
                             builder: (dCtx) => AlertDialog(
-                              title: const Text('Eliminar preset'),
-                              content: Text('¿Eliminar "$n"?'),
+                              title: const Text('Delete preset'),
+                              content: Text('Delete "$n"?'),
                               actions: [
-                                TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancelar')),
-                                FilledButton(onPressed: () => Navigator.pop(dCtx, true), child: const Text('Eliminar')),
+                                TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Cancel')),
+                                FilledButton(onPressed: () => Navigator.pop(dCtx, true), child: const Text('Delete')),
                               ],
                             ),
                           ) ?? false;
@@ -1089,7 +919,7 @@ class _MixerPageState extends State<MixerPage> {
               padding: const EdgeInsets.only(bottom: 8),
               child: FilledButton.icon(
                 icon: const Icon(Icons.add),
-                label: const Text('Nuevo preset'),
+                label: const Text('New preset'),
                 onPressed: () {
                   Navigator.pop(ctx);
                   _savePresetFlow();
@@ -1102,7 +932,7 @@ class _MixerPageState extends State<MixerPage> {
     );
   }
 
-  // ======= Cambio de tema =======
+  // ======= Theme =======
   Future<void> _pickTheme() async {
     final idx = await showModalBottomSheet<int>(
       context: context,
@@ -1113,8 +943,8 @@ class _MixerPageState extends State<MixerPage> {
           children: [
             const ListTile(
               leading: Icon(Icons.palette_outlined),
-              title: Text('Tema del reproductor'),
-              subtitle: Text('Afecta colores, gradiente y visualizador'),
+              title: Text('Player theme'),
+              subtitle: Text('Affects colors, gradient and visualizer'),
             ),
             for (int i = 0; i < _themes.length; i++)
               RadioListTile<int>(
@@ -1134,16 +964,15 @@ class _MixerPageState extends State<MixerPage> {
     await sp.setInt(_kThemeIdxKey, _themeIndex);
   }
 
-  // ======= Timer =======
   void _pickTimer() async {
     final minutes = await showModalBottomSheet<int>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const ListTile(title: Text('Temporizador')),
+          const ListTile(title: Text('Timer')),
           for (final m in [15, 30, 45, 60, 90])
             ListTile(leading: const Icon(Icons.timer), title: Text('$m min'), onTap: () => Navigator.pop(ctx, m)),
-          ListTile(leading: const Icon(Icons.clear), title: const Text('Cancelar temporizador'), onTap: () => Navigator.pop(ctx, -1)),
+          ListTile(leading: const Icon(Icons.clear), title: const Text('Cancel timer'), onTap: () => Navigator.pop(ctx, -1)),
         ]),
       ),
     );
@@ -1187,7 +1016,7 @@ class _MixerPageState extends State<MixerPage> {
     return hh > 0 ? '$hh:$mm:$ss' : '$mm:$ss';
   }
 
-  // ======= Helpers de links (Créditos) =======
+  // ======= Link helpers (Credits) =======
   bool _isHttpUrl(String? s) {
     if (s == null) return false;
     final u = Uri.tryParse(s);
@@ -1198,14 +1027,11 @@ class _MixerPageState extends State<MixerPage> {
     final uri = Uri.parse(url);
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo abrir el enlace')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open link.')));
     }
   }
 
   // ======= UI =======
-
   Widget _visualHeader() {
     final timerCaption = _remainingStr;
     return Container(
@@ -1213,11 +1039,7 @@ class _MixerPageState extends State<MixerPage> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: const BorderRadius.all(Radius.circular(20)),
-        gradient: LinearGradient(
-          colors: T.headerGradient,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: LinearGradient(colors: T.headerGradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1225,36 +1047,22 @@ class _MixerPageState extends State<MixerPage> {
           Row(
             children: [
               const Expanded(
-                child: Text('Mezcla para foco', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: Colors.white)),
+                child: Text('Focus mix', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: Colors.white)),
               ),
+              IconButton(tooltip: 'Change theme', onPressed: _pickTheme, icon: const Icon(Icons.palette_outlined, color: Colors.white)),
+              IconButton(tooltip: 'Timer', onPressed: _pickTimer, icon: const Icon(Icons.timer_outlined, color: Colors.white)),
               IconButton(
-                tooltip: 'Cambiar tema',
-                onPressed: _pickTheme,
-                icon: const Icon(Icons.palette_outlined, color: Colors.white),
-              ),
+                  tooltip: _pausedAll ? 'Resume mix' : 'Pause mix',
+                  onPressed: _anyTrackOn() ? (_pausedAll ? _resumeAll : _pauseAll) : null,
+                  icon: Icon(_pausedAll ? Icons.play_arrow : Icons.pause, color: Colors.white)),
               IconButton(
-                tooltip: 'Temporizador',
-                onPressed: _pickTimer,
-                icon: const Icon(Icons.timer_outlined, color: Colors.white),
-              ),
-              IconButton(
-                tooltip: _pausedAll ? 'Reanudar mezcla' : 'Pausar mezcla',
-                onPressed: _anyTrackOn() ? (_pausedAll ? _resumeAll : _pauseAll) : null,
-                icon: Icon(_pausedAll ? Icons.play_arrow : Icons.pause, color: Colors.white),
-              ),
-              IconButton(
-                tooltip: 'Fade-out y detener todo',
-                onPressed: _anyTrackOn() ? () => _fadeAllOut(ms: 600) : null,
-                icon: const Icon(Icons.stop_circle_outlined, color: Colors.white),
-              ),
+                  tooltip: 'Fade-out & stop all',
+                  onPressed: _anyTrackOn() ? () => _fadeAllOut(ms: 600) : null,
+                  icon: const Icon(Icons.stop_circle_outlined, color: Colors.white)),
             ],
           ),
           if (timerCaption != null) const SizedBox(height: 6),
-          if (timerCaption != null)
-            const Text(
-              'Timer activo',
-              style: TextStyle(color: Colors.white70),
-            ),
+          if (timerCaption != null) const Text('Timer running', style: TextStyle(color: Colors.white70)),
           Expanded(
             child: _VibesVisualizer(
               color: T.visBar,
@@ -1281,10 +1089,7 @@ class _MixerPageState extends State<MixerPage> {
   }) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: T.main.withOpacity(0.15)),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: T.main.withOpacity(0.15))),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -1301,10 +1106,7 @@ class _MixerPageState extends State<MixerPage> {
                 const Icon(Icons.volume_down),
                 Expanded(
                   child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: T.main,
-                      thumbColor: T.main,
-                    ),
+                    data: SliderTheme.of(context).copyWith(activeTrackColor: T.main, thumbColor: T.main),
                     child: Slider(value: volume, min: 0, max: 1, onChanged: onVolume),
                   ),
                 ),
@@ -1325,43 +1127,34 @@ class _MixerPageState extends State<MixerPage> {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: _assetDefs.isEmpty
-              ? const Text('No hay pistas externas. Agrega audios CC0/CC-BY en assets/audio/ y decláralos en pubspec.yaml.')
-              : Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Créditos', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 8),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: _assetDefs.length,
-                  itemBuilder: (_, i) {
-                    final c = _assetDefs[i].credit;
-                    return ListTile(
-                      leading: const Icon(Icons.music_note),
-                      title: Text(_assetDefs[i].title),
-                      subtitle: c == null
-                          ? const Text('CC0 (sin atribución)')
-                          : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('${c.title} — ${c.author}'),
-                          Text(c.license),
-                          if (_isHttpUrl(c.source))
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: TextButton(
-                                onPressed: () => _openUrl(c.source!),
-                                child: const Text('Ver más'),
-                              ),
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+              ? const Text('No external tracks. Add CC0/CC-BY audio files under assets/audio/ and declare them in pubspec.yaml.')
+              : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Credits', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.builder(
+                itemCount: _assetDefs.length,
+                itemBuilder: (_, i) {
+                  final c = _assetDefs[i].credit;
+                  return ListTile(
+                    leading: const Icon(Icons.music_note),
+                    title: Text(_assetDefs[i].title),
+                    subtitle: c == null
+                        ? const Text('CC0 (no attribution)')
+                        : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('${c.title} — ${c.author}'),
+                      Text(c.license),
+                      if (_isHttpUrl(c.source))
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(onPressed: () => _openUrl(c.source!), child: const Text('View source')),
+                        ),
+                    ]),
+                  );
+                },
               ),
-            ],
-          ),
+            ),
+          ]),
         ),
       ),
     );
@@ -1375,9 +1168,9 @@ class _MixerPageState extends State<MixerPage> {
 
     final timerCaption = _remainingStr;
 
-    final List<_AssetTrack> filteredAssets = (_activeCategory == 'Todos')
+    final List<_AssetTrack> filteredAssets = (_activeCategory == 'All')
         ? _assetDefs
-        : (_activeCategory == 'Generadores')
+        : (_activeCategory == 'Generators')
         ? <_AssetTrack>[]
         : _assetDefs.where((t) => t.category == _activeCategory).toList();
 
@@ -1385,13 +1178,13 @@ class _MixerPageState extends State<MixerPage> {
       appBar: AppBar(
         title: Text(timerCaption == null ? 'FocusNoise Mixer' : 'FocusNoise • $timerCaption'),
         actions: [
-          IconButton(tooltip: 'Créditos', onPressed: _showCredits, icon: const Icon(Icons.info_outline)),
-          IconButton(tooltip: 'Guardar preset con nombre', onPressed: _savePresetFlow, icon: const Icon(Icons.star_border)),
-          IconButton(tooltip: 'Mis presets', onPressed: _showPresetPicker, icon: const Icon(Icons.playlist_add_check)),
+          IconButton(tooltip: 'Credits', onPressed: _showCredits, icon: const Icon(Icons.info_outline)),
+          IconButton(tooltip: 'Save named preset', onPressed: _savePresetFlow, icon: const Icon(Icons.star_border)),
+          IconButton(tooltip: 'My presets', onPressed: _showPresetPicker, icon: const Icon(Icons.playlist_add_check)),
 
-          // ===== Selector de Tema (intacto) =====
+          // ===== Theme selector =====
           PopupMenuButton<String>(
-            tooltip: 'Tema',
+            tooltip: 'Theme',
             onSelected: (v) {
               final idx = _themes.indexWhere((t) => t.name == v);
               if (idx >= 0) _pickThemeDirect(idx);
@@ -1399,41 +1192,13 @@ class _MixerPageState extends State<MixerPage> {
             itemBuilder: (ctx) => _themes
                 .map((t) => PopupMenuItem<String>(
               value: t.name,
-              child: Row(
-                children: [
-                  CircleAvatar(radius: 6, backgroundColor: t.main),
-                  const SizedBox(width: 8),
-                  Text(t.name),
-                ],
-              ),
+              child: Row(children: [CircleAvatar(radius: 6, backgroundColor: t.main), const SizedBox(width: 8), Text(t.name)]),
             ))
                 .toList(),
             icon: const Icon(Icons.palette_outlined),
           ),
 
-          // ===== NUEVO: Selector de idioma =====
-          PopupMenuButton<String>(
-            tooltip: 'Idioma',
-            icon: const Icon(Icons.language),
-            onSelected: (code) => _applyLanguageChoice(code),
-            itemBuilder: (ctx) => [
-              CheckedPopupMenuItem<String>(
-                value: 'es',
-                checked: (_langCode ?? 'es') == 'es',
-                child: const Text('Español'),
-              ),
-              CheckedPopupMenuItem<String>(
-                value: 'en',
-                checked: (_langCode ?? 'es') == 'en',
-                child: const Text('English'),
-              ),
-              CheckedPopupMenuItem<String>(
-                value: 'pt',
-                checked: (_langCode ?? 'es') == 'pt',
-                child: const Text('Português'),
-              ),
-            ],
-          ),
+          // ===== Language selector (Mixer) =====
         ],
       ),
 
@@ -1443,63 +1208,50 @@ class _MixerPageState extends State<MixerPage> {
           _visualHeader(),
           const SizedBox(height: 12),
 
-          // Volumen Maestro
+          // Master volume
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Padding(
               padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Volumen maestro', style: TextStyle(fontWeight: FontWeight.w700)),
-                  Row(
-                    children: [
-                      const Icon(Icons.volume_mute_outlined),
-                      Expanded(
-                        child: Slider(
-                          value: _masterGain,
-                          min: 0,
-                          max: 1,
-                          onChanged: (v) => _setMasterGain(v),
-                        ),
-                      ),
-                      const Icon(Icons.volume_up_outlined),
-                    ],
-                  ),
-                ],
-              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Master volume', style: TextStyle(fontWeight: FontWeight.w700)),
+                Row(children: [
+                  const Icon(Icons.volume_mute_outlined),
+                  Expanded(child: Slider(value: _masterGain, min: 0, max: 1, onChanged: (v) => _setMasterGain(v))),
+                  const Icon(Icons.volume_up_outlined),
+                ]),
+              ]),
             ),
           ),
           const SizedBox(height: 12),
 
-          // Selector de categorías (chips)
+          // Category chips
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: _categories.map((c) {
-                final selected = _activeCategory == c;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(c),
-                    selected: selected,
-                    selectedColor: T.chipSelectedBg,
-                    side: BorderSide(color: selected ? T.main : Colors.black12),
-                    onSelected: (_) => setState(() => _activeCategory = c),
-                  ),
-                );
-              }).toList(),
+              children: _categories
+                  .map((c) => Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(c),
+                  selected: _activeCategory == c,
+                  selectedColor: T.chipSelectedBg,
+                  side: BorderSide(color: _activeCategory == c ? T.main : Colors.black12),
+                  onSelected: (_) => setState(() => _activeCategory = c),
+                ),
+              ))
+                  .toList(),
             ),
           ),
           const SizedBox(height: 12),
 
-          // Generadores
-          if (_activeCategory == 'Todos' || _activeCategory == 'Generadores') ...[
-            const Text('Generadores (offline)', style: TextStyle(fontWeight: FontWeight.w700)),
+          // Generators
+          if (_activeCategory == 'All' || _activeCategory == 'Generators') ...[
+            const Text('Generators (offline)', style: TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
             _track(
-              title: 'Ruido Blanco',
-              subtitle: 'Uniforme en todas las frecuencias',
+              title: 'White Noise',
+              subtitle: 'Flat energy across frequencies',
               on: whiteOn,
               onChanged: (v) async {
                 setState(() => whiteOn = v);
@@ -1512,8 +1264,8 @@ class _MixerPageState extends State<MixerPage> {
               },
             ),
             _track(
-              title: 'Ruido Rosa',
-              subtitle: 'Más energía en bajas frecuencias (1/f)',
+              title: 'Pink Noise',
+              subtitle: 'More energy in low frequencies (1/f)',
               on: pinkOn,
               onChanged: (v) async {
                 setState(() => pinkOn = v);
@@ -1526,8 +1278,8 @@ class _MixerPageState extends State<MixerPage> {
               },
             ),
             _track(
-              title: 'Ruido Marrón',
-              subtitle: 'Suave, tipo oleaje/viento',
+              title: 'Brown Noise',
+              subtitle: 'Soft, wave/wind-like',
               on: brownOn,
               onChanged: (v) async {
                 setState(() => brownOn = v);
@@ -1541,7 +1293,7 @@ class _MixerPageState extends State<MixerPage> {
             ),
             _track(
               title: 'Binaural (220Hz ± 5Hz)',
-              subtitle: 'Usa audífonos para percibir el beat',
+              subtitle: 'Use headphones to perceive the beat',
               on: binauralOn,
               onChanged: (v) async {
                 setState(() => binauralOn = v);
@@ -1554,8 +1306,8 @@ class _MixerPageState extends State<MixerPage> {
               },
             ),
             _track(
-              title: 'Ruido Azul',
-              subtitle: 'Énfasis en altas frecuencias (+3 dB/oct)',
+              title: 'Blue Noise',
+              subtitle: 'Emphasis on high frequencies (+3 dB/oct)',
               on: blueOn,
               onChanged: (v) async {
                 setState(() => blueOn = v);
@@ -1568,8 +1320,8 @@ class _MixerPageState extends State<MixerPage> {
               },
             ),
             _track(
-              title: 'Ruido Violeta',
-              subtitle: 'Altas aún más presentes (+6 dB/oct)',
+              title: 'Violet Noise',
+              subtitle: 'Highs even more present (+6 dB/oct)',
               on: violetOn,
               onChanged: (v) async {
                 setState(() => violetOn = v);
@@ -1582,8 +1334,8 @@ class _MixerPageState extends State<MixerPage> {
               },
             ),
             _track(
-              title: 'Viento (sintético)',
-              subtitle: 'Ráfagas suaves con envolvente lenta',
+              title: 'Wind (synthetic)',
+              subtitle: 'Soft gusts with slow envelope',
               on: windOn,
               onChanged: (v) async {
                 setState(() => windOn = v);
@@ -1596,8 +1348,8 @@ class _MixerPageState extends State<MixerPage> {
               },
             ),
             _track(
-              title: 'Lluvia (sintética)',
-              subtitle: 'Hiss + gotitas aleatorias',
+              title: 'Rain (synthetic)',
+              subtitle: 'Hiss + random droplets',
               on: rainOn,
               onChanged: (v) async {
                 setState(() => rainOn = v);
@@ -1610,8 +1362,8 @@ class _MixerPageState extends State<MixerPage> {
               },
             ),
             _track(
-              title: 'Olas (sintéticas)',
-              subtitle: 'Rumble grave + espuma modulada',
+              title: 'Waves (synthetic)',
+              subtitle: 'Low rumble + modulated foam',
               on: wavesOn,
               onChanged: (v) async {
                 setState(() => wavesOn = v);
@@ -1624,8 +1376,8 @@ class _MixerPageState extends State<MixerPage> {
               },
             ),
             _track(
-              title: 'Chimenea (sintética)',
-              subtitle: 'Base cálida + chasquidos aleatorios',
+              title: 'Fireplace (synthetic)',
+              subtitle: 'Warm bed + random crackles',
               on: fireOn,
               onChanged: (v) async {
                 setState(() => fireOn = v);
@@ -1639,44 +1391,39 @@ class _MixerPageState extends State<MixerPage> {
             ),
           ],
 
-          // Assets filtrados por categoría
+          // Assets filtered by category
           if (filteredAssets.isNotEmpty) ...[
             const SizedBox(height: 12),
             const Divider(),
-            const Text('Ambientes (assets libres)', style: TextStyle(fontWeight: FontWeight.w700)),
+            const Text('Ambiences (free assets)', style: TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
             for (final track in filteredAssets)
-              Builder(
-                builder: (_) {
-                  final realIndex = _assetDefs.indexOf(track);
-                  return _track(
-                    title: track.title,
-                    subtitle: track.credit == null ? 'CC0 (sin atribución)' : '${track.credit!.license} — ${track.credit!.author}',
-                    on: _assetOn[realIndex],
-                    onChanged: (v) async {
-                      setState(() => _assetOn[realIndex] = v);
-                      await _toggleAsset(_assetPlayers[realIndex], track.assetPath, v, _assetVol[realIndex]);
-                    },
-                    volume: _assetVol[realIndex],
-                    onVolume: (v) async {
-                      setState(() => _assetVol[realIndex] = v);
-                      await _applyVolume(_assetPlayers[realIndex], v);
-                    },
-                  );
-                },
-              ),
+              Builder(builder: (_) {
+                final i = _assetDefs.indexOf(track);
+                return _track(
+                  title: track.title,
+                  subtitle: track.credit == null ? 'CC0 (no attribution)' : '${track.credit!.license} — ${track.credit!.author}',
+                  on: _assetOn[i],
+                  onChanged: (v) async {
+                    setState(() => _assetOn[i] = v);
+                    await _toggleAsset(_assetPlayers[i], track.assetPath, v, _assetVol[i]);
+                  },
+                  volume: _assetVol[i],
+                  onVolume: (v) async {
+                    setState(() => _assetVol[i] = v);
+                    await _applyVolume(_assetPlayers[i], v);
+                  },
+                );
+              }),
           ],
 
           const SizedBox(height: 8),
-          const Text('Tip: mezcla 2–3 fuentes a volúmenes moderados (0.3–0.6) para evitar clipping.'),
+          const Text('Tip: mix 2–3 sources at moderate volumes (0.3–0.6) to avoid clipping.'),
         ],
       ),
       bottomNavigationBar: (_banner == null)
           ? null
-          : SizedBox(
-        height: _banner!.size.height.toDouble(),
-        child: AdWidget(ad: _banner!),
-      ),
+          : SizedBox(height: _banner!.size.height.toDouble(), child: AdWidget(ad: _banner!)),
     );
   }
 
@@ -1687,7 +1434,7 @@ class _MixerPageState extends State<MixerPage> {
   }
 }
 
-// ======= Visualizador de “vibraciones” optimizado =======
+// ======= Vibes visualizer (optimized) =======
 class _VibesVisualizer extends StatefulWidget {
   final bool active;
   final double level; // 0..1
@@ -1763,7 +1510,7 @@ class _VibesVisualizerState extends State<_VibesVisualizer> {
     if (!widget.active) {
       setState(() {
         for (int i = 0; i < _vals.length; i++) {
-          _vals[i] *= 0.85; // decay a cero si quedara corriendo
+          _vals[i] *= 0.85;
         }
       });
       return;
@@ -1791,10 +1538,7 @@ class _VibesVisualizerState extends State<_VibesVisualizer> {
     final bgColor = widget.bgOverlay ?? Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.08);
 
     return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: bgColor,
-      ),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: bgColor),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: SizedBox(
         height: widget.height,
@@ -1811,10 +1555,7 @@ class _VibesVisualizerState extends State<_VibesVisualizer> {
                 curve: Curves.easeOut,
                 width: 6,
                 height: h,
-                decoration: BoxDecoration(
-                  color: barColor,
-                  borderRadius: BorderRadius.circular(3),
-                ),
+                decoration: BoxDecoration(color: barColor, borderRadius: BorderRadius.circular(3)),
               ),
             );
           }),
@@ -1824,7 +1565,7 @@ class _VibesVisualizerState extends State<_VibesVisualizer> {
   }
 }
 
-// ======= Modelos para assets y créditos =======
+// ======= Models for assets & credits =======
 class _AssetTrack {
   final String title;
   final String assetPath;
